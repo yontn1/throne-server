@@ -34,7 +34,11 @@ module.exports = PacketModels = {
         .string("command", StringOptions)
         .int32le("damage", StringOptions)
         .int32le("face", StringOptions)
-        .int32le("attackLevel", StringOptions), 
+        .string("target_name", StringOptions), 
+    dmg: new Parser().skip(1)
+        .string("command", StringOptions)
+        .int32le("damage", StringOptions)
+        .string("target_name", StringOptions), 
     ranger: new Parser().skip(1)
         .string("command", StringOptions)
         .string("name", StringOptions)
@@ -57,14 +61,17 @@ module.exports = PacketModels = {
         .string("name", StringOptions)
         .int32le("target_x", StringOptions)
         .int32le("target_y", StringOptions)
-        .string("status", StringOptions),
+        .string("status", StringOptions)
+        .string("player_name", StringOptions),
 
     // a players request to change one of its variables
     change: new Parser().skip(1)
         .string("command", StringOptions)
         .string("name", StringOptions)
         .string("variable", StringOptions)
-        .string("value", StringOptions),
+        .string("value", StringOptions)
+        .string("amount", StringOptions)
+        .string("action", StringOptions),
 
     //  an update from the player that its change has passed and it has to be saved on the database.
     accept: new Parser().skip(1)
@@ -80,4 +87,6 @@ module.exports = PacketModels = {
         .int32le("target_x", StringOptions)
         .int32le("target_y", StringOptions)
         .string("item", StringOptions)
+        .string("action", StringOptions)
+        .string("user_name", StringOptions)
 }

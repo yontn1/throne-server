@@ -58,6 +58,8 @@ module.exports = packet = {
                     if (result) {
                         c.user = user;
                         c.enterroom(c.user.current_room);
+                        console.log("Interpret: enterroom should have been called" );
+
                     /*     if (c.user && c.user.current_room) {
                             c.broadcastroom(packet.build(["LEAVE", c.user.username]), c.user.current_room);
                         }; */
@@ -94,7 +96,12 @@ module.exports = packet = {
 
             case "ATTACK": // Player attack
                 var data = PacketModels.attack.parse(datapacket);
-                c.broadcastroom(packet.build(["ATTACK", c.user.username, data.damage, data.face, data.attackLevel]));
+                c.broadcastroom(packet.build(["ATTACK", c.user.username, data.damage, data.face, data.target_name]));
+                break;
+
+            case "DMG": // Player attack
+                var data = PacketModels.dmg.parse(datapacket);
+                c.broadcastroom(packet.build(["DMG", c.user.username, data.damage, data.target_name]));
                 break;
 
             case "RANGER": // Shoot
@@ -109,12 +116,12 @@ module.exports = packet = {
 
             case "NPC": // NPC location and status
                 var data = PacketModels.npc.parse(datapacket);
-                c.broadcastroom(packet.build(["NPC", data.object, data.name, data.target_x, data.target_y, data.status]));
+                c.broadcastroom(packet.build(["NPC", data.object, data.name, data.target_x, data.target_y, data.status, data.player_name]));
                 break;
 
             case "CHANGE": // Request a change
                 var data = PacketModels.change.parse(datapacket);
-                c.broadcastroom(packet.build(["CHANGE", data.name, data.variable, data.value]));
+                c.broadcastroom(packet.build(["CHANGE", data.name, data.variable, data.value, data.amount, data.action]));
                 break;
 
             case "ACCEPT": // Save changes to the database
@@ -155,7 +162,7 @@ module.exports = packet = {
 
             case "DROP": // Drop item
                 var data = PacketModels.drop.parse(datapacket);
-                c.broadcastroom(packet.build(["DROP", data.name, data.target_x, data.target_y, data.item]));
+                c.broadcastroom(packet.build(["DROP", data.name, data.target_x, data.target_y, data.item, data.action, data.user_name]));
                 break;
 
             default:

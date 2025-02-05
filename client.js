@@ -19,15 +19,36 @@ module.exports = function() {
     };
 
     // Method to handle room entry
-    this.enterroom = function(selected_room) {
+    this.enterroom = function (selected_room) {
+        console.log("Interpret: enterroom has have been called" );
+
         if (maps[selected_room] && maps[selected_room].clients) {
-            maps[selected_room].clients.forEach(function(otherClient) {
-                const enterPacket = packet.build(["ENTER", client.user.username, client.user.pos_x, client.user.pos_y]);
-                otherClient.socket.send(enterPacket);  // Send raw binary packet
+                    console.log("Interpret: enterroom has have been called123" );
+
+            console.log(`Client ${client.user.username} is entering room: ${selected_room}`);
+            
+            // Notify the new client about all existing users in the room
+            maps[selected_room].clients.forEach(function (otherClient) {
+                const enterPacket = packet.build(["ENTER", otherClient.user.username, otherClient.user.pos_x, otherClient.user.pos_y]);
+                client.socket.send(enterPacket); // Send raw binary packet
+                console.log(`Sent ENTER packet to ${client.user.username} for existing user: ${otherClient.user.username}`);
             });
+    
+            // Notify existing clients in the room  about the new client
+            const newClientPacket = packet.build(["ENTER", client.user.username, client.user.pos_x, client.user.pos_y]);
+            maps[selected_room].clients.forEach(function (otherClient) {
+                otherClient.socket.send(newClientPacket); // Send raw binary packet
+                console.log(`Notified ${otherClient.user.username} about new user: ${client.user.username}`);
+            });
+    
+            // Add the new client to the room
             maps[selected_room].clients.push(client);
+            console.log(`Added ${client.user.username} to room: ${selected_room}`);
+        } else {
+            console.log(`Room ${selected_room} does not exist or has no clients.`);
         }
     };
+    
 
     // Method to broadcast data to all clients in the same room
     this.broadcastroom = function(packetData) {
