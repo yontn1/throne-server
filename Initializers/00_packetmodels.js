@@ -38,7 +38,8 @@ module.exports = PacketModels = {
     dmg: new Parser().skip(1)
         .string("command", StringOptions)
         .int32le("damage", StringOptions)
-        .string("target_name", StringOptions), 
+        .string("target_name", StringOptions)
+        .string("hp_percentage", StringOptions), 
     ranger: new Parser().skip(1)
         .string("command", StringOptions)
         .string("name", StringOptions)
@@ -88,5 +89,16 @@ module.exports = PacketModels = {
         .int32le("target_y", StringOptions)
         .string("item", StringOptions)
         .string("action", StringOptions)
-        .string("user_name", StringOptions)
+        .string("user_name", StringOptions),
+        
+    // handle crops
+    crop: new Parser().skip(1)
+        .string("command", StringOptions)
+        .string("type1", StringOptions)
+        .string("name2", StringOptions)
+        .string("stage3", StringOptions)
+        .string("action4", StringOptions)
+        .string("user_name5", StringOptions)
+        .string("target_x6", StringOptions)
+        .string("target_y7", StringOptions)
 }

@@ -20,22 +20,22 @@ module.exports = function() {
 
     // Method to handle room entry
     this.enterroom = function (selected_room) {
-        console.log("Interpret: enterroom has have been called" );
+    
 
         if (maps[selected_room] && maps[selected_room].clients) {
-                    console.log("Interpret: enterroom has have been called123" );
+                 
 
             console.log(`Client ${client.user.username} is entering room: ${selected_room}`);
             
             // Notify the new client about all existing users in the room
             maps[selected_room].clients.forEach(function (otherClient) {
-                const enterPacket = packet.build(["ENTER", otherClient.user.username, otherClient.user.pos_x, otherClient.user.pos_y]);
+                const enterPacket = packet.build(["ENTER", otherClient.user.username, otherClient.user.pos_x, otherClient.user.pos_y, otherClient.user.weapon, otherClient.user.trousers_colour, otherClient.user.top_colour, otherClient.user.skin_colour, otherClient.user.hair_colour, otherClient.user.hair]);
                 client.socket.send(enterPacket); // Send raw binary packet
                 console.log(`Sent ENTER packet to ${client.user.username} for existing user: ${otherClient.user.username}`);
             });
     
             // Notify existing clients in the room  about the new client
-            const newClientPacket = packet.build(["ENTER", client.user.username, client.user.pos_x, client.user.pos_y]);
+            const newClientPacket = packet.build(["ENTER", client.user.username, client.user.pos_x, client.user.pos_y, client.user.weapon, client.user.trousers_colour, client.user.top_colour, client.user.skin_colour, client.user.hair_colour, client.user.hair]);
             maps[selected_room].clients.forEach(function (otherClient) {
                 otherClient.socket.send(newClientPacket); // Send raw binary packet
                 console.log(`Notified ${otherClient.user.username} about new user: ${client.user.username}`);
@@ -81,7 +81,7 @@ module.exports = function() {
         } catch (e) {
             console.error("Error parsing message", e);
         }
-    };
+    };  
 
     // Error handling method
     this.error = function(err) {

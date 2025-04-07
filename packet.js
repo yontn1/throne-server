@@ -9,13 +9,18 @@ module.exports = packet = {
         params.forEach(function (param) {
             var buffer;
 
-            if (typeof param === 'string') {
+           
+            console.log(param);
+              if (typeof param === 'string') {
                 buffer = Buffer.from(param, 'utf8');
                 buffer = Buffer.concat([buffer, Buffer.from([0])], buffer.length + 1); // Null-terminated string
             } else if (typeof param === 'number') {
                 buffer = Buffer.alloc(2);
                 buffer.writeUInt16LE(param, 0); // Write the number as a 16-bit integer
             } else {
+                buffer = Buffer.from("0", 'utf8');
+                buffer = Buffer.concat([buffer, Buffer.from([0])], buffer.length + 1); // Null-terminated string
+
                 console.log("WARNING: Unknown data type in packet builder!");
             }
 
@@ -28,6 +33,7 @@ module.exports = packet = {
         size.writeUInt8(dataBuffer.length + 1, 0); // Packet size
 
         var finalPacket = Buffer.concat([size, dataBuffer], size.length + dataBuffer.length);
+        console.log(finalPacket);
         return finalPacket;
     },
 
@@ -66,12 +72,22 @@ module.exports = packet = {
                         c.socket.send(packet.build(["LOGIN", "TRUE",
                             c.user.current_room, c.user.pos_x, c.user.pos_y, c.user.username, c.user.experience, c.user.hp, c.user.mana,
                             c.user.stanima, c.user.money, c.user.weapon, c.user.shield, c.user.hat, c.user.top, c.user.trousers, c.user.ring1, c.user.ring2, c.user.ring3,
-                            c.user.ring4, c.user.amulet, c.user.shoes, c.user.gloves, c.user.cape, c.user.item1, c.user.item2, c.user.item3, c.user.item4, c.user.item5, c.user.item6,
-                            c.user.status]));
+                            c.user.ring4, c.user.amulet, c.user.shoes, c.user.gloves, c.user.cape,
+                            c.user.item1, c.user.item2, c.user.item3, c.user.item4, c.user.item5, c.user.item6,
+                            c.user.status, c.user.trousers_colour, c.user.top_colour, c.user.skin_colour, c.user.hair_colour, c.user.hair]));
                     } else {
                         c.socket.send(packet.build(["LOGIN", "FALSE"]));
                     }
                 });
+                break;
+                
+                case "LOGIN2":
+                
+   
+                c.socket.send(packet.build(["LOGIN2",
+                    c.user.item1, c.user.item2, c.user.item3, c.user.item4, c.user.item5, c.user.item6,
+                    c.user.status, c.user.trousers_colour, c.user.top_colour, c.user.skin_colour, c.user.hair_colour, c.user.hair]));
+                    
                 break;
 
             case "REGISTER":
@@ -101,7 +117,7 @@ module.exports = packet = {
 
             case "DMG": // Player attack
                 var data = PacketModels.dmg.parse(datapacket);
-                c.broadcastroom(packet.build(["DMG", c.user.username, data.damage, data.target_name]));
+                c.broadcastroom(packet.build(["DMG", c.user.username, data.damage, data.target_name, data.hp_percentage]));
                 break;
 
             case "RANGER": // Shoot
@@ -126,6 +142,7 @@ module.exports = packet = {
 
             case "ACCEPT": // Save changes to the database
                 var data = PacketModels.accept.parse(datapacket);
+                c.broadcastroom(packet.build(["ACCEPT", data.name, data.variable, data.value]));
                 switch (data.variable) {
                     case "experience":
                         c.user.experience = data.value;
@@ -157,12 +174,32 @@ module.exports = packet = {
                     case "weapon":
                         c.user.weapon = data.value;
                         break;
+                    case "trousers_colour":
+                        c.user.trousers_colour = data.value;
+                        break;
+                    case "top_colour":
+                        c.user.top_colour = data.value;
+                        break;
+                    case "skin_colour":
+                        c.user.skin_colour = data.value;
+                        break;
+                    case "hair_colour":
+                        c.user.hair_colour = data.value;
+                        break;
+                    case "hair":
+                        c.user.hair = data.value;
+                        break;
                 }
                 break;
 
             case "DROP": // Drop item
                 var data = PacketModels.drop.parse(datapacket);
                 c.broadcastroom(packet.build(["DROP", data.name, data.target_x, data.target_y, data.item, data.action, data.user_name]));
+                break;
+
+            case "CROP": 
+                var data = PacketModels.crop.parse(datapacket);
+                c.broadcastroom(packet.build(["CROP", data.type1, data.name2, data.stage3, data.action4, data.user_name5, data.target_x6, data.target_y7]));
                 break;
 
             default:
