@@ -9,9 +9,9 @@ module.exports = packet = {
         params.forEach(function (param) {
             var buffer;
 
-           
+
             console.log(param);
-              if (typeof param === 'string') {
+            if (typeof param === 'string') {
                 buffer = Buffer.from(param, 'utf8');
                 buffer = Buffer.concat([buffer, Buffer.from([0])], buffer.length + 1); // Null-terminated string
             } else if (typeof param === 'number') {
@@ -64,30 +64,95 @@ module.exports = packet = {
                     if (result) {
                         c.user = user;
                         c.enterroom(c.user.current_room);
-                        console.log("Interpret: enterroom should have been called" );
+                        console.log("Interpret: enterroom should have been called");
 
-                    /*     if (c.user && c.user.current_room) {
-                            c.broadcastroom(packet.build(["LEAVE", c.user.username]), c.user.current_room);
-                        }; */
-                        c.socket.send(packet.build(["LOGIN", "TRUE",
-                            c.user.current_room, c.user.pos_x, c.user.pos_y, c.user.username, c.user.experience, c.user.hp, c.user.mana,
-                            c.user.stanima, c.user.money, c.user.weapon, c.user.shield, c.user.hat, c.user.top, c.user.trousers, c.user.ring1, c.user.ring2, c.user.ring3,
-                            c.user.ring4, c.user.amulet, c.user.shoes, c.user.gloves, c.user.cape,
-                            c.user.item1, c.user.item2, c.user.item3, c.user.item4, c.user.item5, c.user.item6,
-                            c.user.status, c.user.trousers_colour, c.user.top_colour, c.user.skin_colour, c.user.hair_colour, c.user.hair]));
+                        /*     if (c.user && c.user.current_room) {
+                                c.broadcastroom(packet.build(["LEAVE", c.user.username]), c.user.current_room);
+                            }; */
+                            if (c.user.hp < 0) {
+                                c.user.hp = 0; // Ensure HP is not negative
+                            }
+                            c.socket.send(packet.build([
+                                "LOGIN", "TRUE",
+                                c.user.current_room,
+                                c.user.pos_x,
+                                c.user.pos_y,
+                                c.user.username,
+                                c.user.experience,
+                                c.user.hp,
+                                c.user.mana,
+                                c.user.stanima,
+                                c.user.money,
+                                c.user.weapon,
+                                c.user.shield,
+                                c.user.hat,
+                                c.user.top,
+                                c.user.trousers,
+                                c.user.ring1,
+                                c.user.ring2,
+                                c.user.ring3,
+                                c.user.ring4,
+                                c.user.amulet,
+                                c.user.shoes,
+                                c.user.gloves,
+                                c.user.cape,
+                                c.user.item1,
+                                c.user.item2,
+                                c.user.item3,
+                                c.user.item4,
+                                c.user.item5,
+                                c.user.item6,
+                                c.user.item7,
+                                c.user.item8,
+                                c.user.item9,
+                                c.user.item10,
+                                c.user.item11,
+                                c.user.item12,
+                                c.user.item13,
+                                c.user.item14,
+                                c.user.item15,
+                                c.user.item16,
+                                c.user.item17,
+                                c.user.item18,
+                                c.user.item19,
+                                c.user.item20,
+                                c.user.item21,
+                                c.user.item22,
+                                c.user.item23,
+                                c.user.item24,
+                                c.user.item25,
+                                c.user.item26,
+                                c.user.item27,
+                                c.user.item28,
+                                c.user.status,
+                                c.user.trousers_colour,
+                                c.user.top_colour,
+                                c.user.skin_colour,
+                                c.user.hair_colour,
+                                c.user.hair,
+                                c.user.hpExperience,
+                                c.user.meleeExperience,
+                                c.user.defenceExperience,
+                                c.user.farmingExperience,
+                                c.user.cookingExperience,
+                                c.user.miningExperience,
+                                c.user.choppingExperience,
+                                c.user.fishingExperience,
+                                c.user.buildingExperience,
+                                c.user.smithingExperience
+                            ]));
+                            
                     } else {
                         c.socket.send(packet.build(["LOGIN", "FALSE"]));
                     }
                 });
                 break;
-                
-                case "LOGIN2":
-                
-   
+
+            case "LOGIN2":
                 c.socket.send(packet.build(["LOGIN2",
                     c.user.item1, c.user.item2, c.user.item3, c.user.item4, c.user.item5, c.user.item6,
                     c.user.status, c.user.trousers_colour, c.user.top_colour, c.user.skin_colour, c.user.hair_colour, c.user.hair]));
-                    
+
                 break;
 
             case "REGISTER":
@@ -101,18 +166,36 @@ module.exports = packet = {
                 });
                 break;
 
-            case "POS": // Player position and existence
-                var data = PacketModels.pos.parse(datapacket);
+            case "POS": {
+                const data = PacketModels.pos.parse(datapacket);
+            
+                // Update user position
                 c.user.pos_x = data.target_x;
                 c.user.pos_y = data.target_y;
                 c.user.hat = data.hat;
-                c.user.save();
+            
+                // Avoid parallel saves by awaiting the current one (requires async context)
+                if (!c.user._savePromise) {
+                    c.user._savePromise = c.user.save()
+                        .catch(err => {
+                            console.error("Failed to save user position:", err);
+                        })
+                        .finally(() => {
+                            c.user._savePromise = null;
+                        });
+                } else {
+                    console.warn("Skipped save: already saving", c.user.username);
+                }
+            
+                // Broadcast to other clients
                 c.broadcastroom(packet.build(["POS", c.user.username, data.target_x, data.target_y, data.hat]));
                 break;
+            }
+                
 
             case "ATTACK": // Player attack
                 var data = PacketModels.attack.parse(datapacket);
-                c.broadcastroom(packet.build(["ATTACK", c.user.username, data.damage, data.face, data.target_name]));
+                c.broadcastroom(packet.build(["ATTACK", c.user.username, data.damage, data.face, data.target_name, data.source_name]));
                 break;
 
             case "DMG": // Player attack
@@ -143,63 +226,35 @@ module.exports = packet = {
             case "ACCEPT": // Save changes to the database
                 var data = PacketModels.accept.parse(datapacket);
                 c.broadcastroom(packet.build(["ACCEPT", data.name, data.variable, data.value]));
-                switch (data.variable) {
-                    case "experience":
-                        c.user.experience = data.value;
-                        break;
-                    case "money":
-                        c.user.money = data.value;
-                        break;
-                    case "hat":
-                        c.user.hat = data.value;
-                        break;
-                    case "item1":
-                        c.user.item1 = data.value;
-                        break;
-                    case "item2":
-                        c.user.item2 = data.value;
-                        break;
-                    case "item3":
-                        c.user.item3 = data.value;
-                        break;
-                    case "item4":
-                        c.user.item4 = data.value;
-                        break;
-                    case "item5":
-                        c.user.item5 = data.value;
-                        break;
-                    case "item6":
-                        c.user.item6 = data.value;
-                        break;
-                    case "weapon":
-                        c.user.weapon = data.value;
-                        break;
-                    case "trousers_colour":
-                        c.user.trousers_colour = data.value;
-                        break;
-                    case "top_colour":
-                        c.user.top_colour = data.value;
-                        break;
-                    case "skin_colour":
-                        c.user.skin_colour = data.value;
-                        break;
-                    case "hair_colour":
-                        c.user.hair_colour = data.value;
-                        break;
-                    case "hair":
-                        c.user.hair = data.value;
-                        break;
+            
+                // Dynamically set the user property
+                if (data.variable in c.user) {
+                    c.user[data.variable] = data.value;
+                } else {
+                    console.warn("Unknown user property received in ACCEPT:", data.variable);
                 }
+            
                 break;
+            
 
             case "DROP": // Drop item
                 var data = PacketModels.drop.parse(datapacket);
                 c.broadcastroom(packet.build(["DROP", data.name, data.target_x, data.target_y, data.item, data.action, data.user_name]));
                 break;
 
-            case "CROP": 
+            case "CROP":
                 var data = PacketModels.crop.parse(datapacket);
                 c.broadcastroom(packet.build(["CROP", data.type1, data.name2, data.stage3, data.action4, data.user_name5, data.target_x6, data.target_y7]));
+                break;
+                
+            case "BIND":
+                var data = PacketModels.bind.parse(datapacket);
+                c.broadcastuser(data.target_name, packet.build(["BIND", c.user.username, data.target_npc, data.action]));
+                break; 
+
+            case "SHOP":
+                var data = PacketModels.shop.parse(datapacket);
+                c.broadcastuser(data.target_name, packet.build(["SHOP", c.user.username, data.target_npc, data.item, data.amount, data.price, data.action]));
                 break;
 
             default:

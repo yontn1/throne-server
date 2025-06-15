@@ -29,7 +29,22 @@ module.exports = function() {
             
             // Notify the new client about all existing users in the room
             maps[selected_room].clients.forEach(function (otherClient) {
-                const enterPacket = packet.build(["ENTER", otherClient.user.username, otherClient.user.pos_x, otherClient.user.pos_y, otherClient.user.weapon, otherClient.user.trousers_colour, otherClient.user.top_colour, otherClient.user.skin_colour, otherClient.user.hair_colour, otherClient.user.hair]);
+                const enterPacket = packet.build([
+                    "ENTER",
+                    otherClient.user.username,
+                    otherClient.user.pos_x,
+                    otherClient.user.pos_y,
+                    otherClient.user.weapon,
+                    otherClient.user.trousers_colour,
+                    otherClient.user.top_colour,
+                    otherClient.user.skin_colour,
+                    otherClient.user.hair_colour,
+                    otherClient.user.hair,
+                    otherClient.user.hp,
+                    otherClient.user.hpExperience,
+                    otherClient.user.meleeExperience,
+                    otherClient.user.defenceExperience,
+                ]);
                 client.socket.send(enterPacket); // Send raw binary packet
                 console.log(`Sent ENTER packet to ${client.user.username} for existing user: ${otherClient.user.username}`);
             });
@@ -54,6 +69,15 @@ module.exports = function() {
     this.broadcastroom = function(packetData) {
         maps[client.user.current_room].clients.forEach(function(otherClient) {
             if (otherClient.user.username !== client.user.username) {
+                otherClient.socket.send(packetData);  // Broadcast binary data as-is
+            }
+        });
+    };
+
+    // Method to broadcast data to a client in the same room
+    this.broadcastuser = function(username, packetData) {
+        maps[client.user.current_room].clients.forEach(function(otherClient) {
+            if (otherClient.user.username == username) {
                 otherClient.socket.send(packetData);  // Broadcast binary data as-is
             }
         });

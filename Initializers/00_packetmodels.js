@@ -1,4 +1,7 @@
 // create Parser from a package that includes Parser (require?)
+
+const { connect } = require('mongoose');
+
 // parser is the thing that receives a command from connection,
 var Parser = require('binary-parser').Parser;
 var StringOptions = {length: 99, zeroTerminated:true};
@@ -34,12 +37,15 @@ module.exports = PacketModels = {
         .string("command", StringOptions)
         .int32le("damage", StringOptions)
         .int32le("face", StringOptions)
-        .string("target_name", StringOptions), 
+        .string("target_name", StringOptions)
+        .string("source_name", StringOptions),
+        
     dmg: new Parser().skip(1)
         .string("command", StringOptions)
-        .int32le("damage", StringOptions)
+        .string("damage", StringOptions)
         .string("target_name", StringOptions)
         .string("hp_percentage", StringOptions), 
+
     ranger: new Parser().skip(1)
         .string("command", StringOptions)
         .string("name", StringOptions)
@@ -50,6 +56,7 @@ module.exports = PacketModels = {
         .int32le("goalpoint_y", StringOptions)
         .int32le("speed", StringOptions)
         .string("arrow", StringOptions),
+
     // the player sending of chat request.
     chat: new Parser().skip(1)
         .string("command", StringOptions)
@@ -100,5 +107,22 @@ module.exports = PacketModels = {
         .string("action4", StringOptions)
         .string("user_name5", StringOptions)
         .string("target_x6", StringOptions)
-        .string("target_y7", StringOptions)
+        .string("target_y7", StringOptions),
+
+    // request connect
+    bind: new Parser().skip(1)
+    .string("command", StringOptions)
+    .string("target_name", StringOptions)
+    .string("target_npc", StringOptions)
+    .string("action", StringOptions),
+
+     // request info
+    shop: new Parser().skip(1)
+     .string("command", StringOptions)
+     .string("target_name", StringOptions)
+     .string("target_npc", StringOptions)
+     .string("item", StringOptions)
+     .string("amount", StringOptions)
+     .string("price", StringOptions)
+     .string("action", StringOptions),
 }
