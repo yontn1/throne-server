@@ -20,37 +20,66 @@ module.exports = function() {
 
     // Method to handle room entry
     this.enterroom = function (selected_room) {
-    
-
         if (maps[selected_room] && maps[selected_room].clients) {
-                 
-
             console.log(`Client ${client.user.username} is entering room: ${selected_room}`);
-            
+    
             // Notify the new client about all existing users in the room
             maps[selected_room].clients.forEach(function (otherClient) {
-                const enterPacket = packet.build([
+                // Validate all fields
+                const packetData = [
                     "ENTER",
-                    otherClient.user.username,
-                    otherClient.user.pos_x,
-                    otherClient.user.pos_y,
-                    otherClient.user.weapon,
-                    otherClient.user.trousers_colour,
-                    otherClient.user.top_colour,
-                    otherClient.user.skin_colour,
-                    otherClient.user.hair_colour,
-                    otherClient.user.hair,
-                    otherClient.user.hp,
-                    otherClient.user.hpExperience,
-                    otherClient.user.meleeExperience,
-                    otherClient.user.defenceExperience,
-                ]);
+                    String(otherClient.user.username || ""),
+                    Number(otherClient.user.pos_x) || 0,
+                    Number(otherClient.user.pos_y) || 0,
+                    String(otherClient.user.weapon || ""),
+                    String(otherClient.user.trousers_colour || ""),
+                    String(otherClient.user.top_colour || ""),
+                    String(otherClient.user.skin_colour || ""),
+                    String(otherClient.user.hair_colour || ""),
+                    String(otherClient.user.hair || ""),
+                    Number(otherClient.user.hp) || 0,
+                    Number(otherClient.user.hpExperience) || 0,
+                    Number(otherClient.user.meleeExperience) || 0,
+                    Number(otherClient.user.defenceExperience) || 0,
+                    Number(otherClient.user.farmingExperience) || 0
+                ];
+    
+                // Ensure HP is not negative
+                if (packetData[10] < 0) {
+                    packetData[10] = 0;
+                }
+    
+                // Log packet data for debugging
+                console.log(`Building ENTER packet for ${otherClient.user.username}:`, packetData);
+    
+                const enterPacket = packet.build(packetData);
                 client.socket.send(enterPacket); // Send raw binary packet
                 console.log(`Sent ENTER packet to ${client.user.username} for existing user: ${otherClient.user.username}`);
             });
     
-            // Notify existing clients in the room  about the new client
-            const newClientPacket = packet.build(["ENTER", client.user.username, client.user.pos_x, client.user.pos_y, client.user.weapon, client.user.trousers_colour, client.user.top_colour, client.user.skin_colour, client.user.hair_colour, client.user.hair]);
+            // Notify existing clients in the room about the new client
+            const newClientPacketData = [
+                "ENTER",
+                String(client.user.username || ""),
+                Number(client.user.pos_x) || 0,
+                Number(client.user.pos_y) || 0,
+                String(client.user.weapon || ""),
+                String(client.user.trousers_colour || ""),
+                String(client.user.top_colour || ""),
+                String(client.user.skin_colour || ""),
+                String(client.user.hair_colour || ""),
+                String(client.user.hair || ""),
+                Number(client.user.hp) || 0,
+                Number(client.user.hpExperience) || 0,
+                Number(client.user.meleeExperience) || 0,
+                Number(client.user.defenceExperience) || 0,
+                Number(client.user.farmingExperience) || 0
+            ];
+    
+            // Log new client packet data
+            console.log(`Building new client packet for ${client.user.username}:`, newClientPacketData);
+    
+            const newClientPacket = packet.build(newClientPacketData);
             maps[selected_room].clients.forEach(function (otherClient) {
                 otherClient.socket.send(newClientPacket); // Send raw binary packet
                 console.log(`Notified ${otherClient.user.username} about new user: ${client.user.username}`);

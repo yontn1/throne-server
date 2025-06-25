@@ -224,17 +224,38 @@ module.exports = packet = {
                 break;
 
             case "ACCEPT": // Save changes to the database
+            try {
                 var data = PacketModels.accept.parse(datapacket);
                 c.broadcastroom(packet.build(["ACCEPT", data.name, data.variable, data.value]));
-            
+
                 // Dynamically set the user property
                 if (data.variable in c.user) {
                     c.user[data.variable] = data.value;
+                    if (!c.user._savePromise) {
+                        c.user._savePromise = c.user.save()
+                            .catch(err => {
+                                console.error("Failed to save user position:", err);
+                            })
+                            .finally(() => {
+                                c.user._savePromise = null;
+                            });
+                    } else {
+                        console.warn("Skipped save: already saving", c.user.username);
+                    }
+                    // Assuming a database save operation here (e.g., saving c.user to DB)
+                    // Replace with actual DB save logic, e.g., db.users.update(c.user)
+                    // await db.users.update({ id: c.user.id }, { [data.variable]: data.value });
                 } else {
                     console.warn("Unknown user property received in ACCEPT:", data.variable);
                 }
+            } catch (error) {
+                console.error("Error processing ACCEPT packet:", error);
+                // Optionally notify client of failure
+                // c.send(packet.build(["ERROR", "Failed to process ACCEPT"]));
+            }
+            break;              
             
-                break;
+ 
             
 
             case "DROP": // Drop item
