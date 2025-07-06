@@ -69,6 +69,7 @@ userSchema = new mongoose.Schema({
     meleeExperience: String,
     defenceExperience: String,
     farmingExperience: String,
+    cookingExperience: String,
     miningExperience: String,
     choppingExperience: String,
     fishingExperience: String,

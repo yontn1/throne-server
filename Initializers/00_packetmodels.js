@@ -30,7 +30,8 @@ module.exports = PacketModels = {
         .string("command", StringOptions)
         .int32le("target_x", StringOptions)
         .int32le("target_y", StringOptions)
-        .string("hat", StringOptions),
+        .string("animation", StringOptions)
+        .string("direction", StringOptions),
 
     // update about the player attack status.
     attack: new Parser().skip(1)

@@ -172,7 +172,7 @@ module.exports = packet = {
                 // Update user position
                 c.user.pos_x = data.target_x;
                 c.user.pos_y = data.target_y;
-                c.user.hat = data.hat;
+                
             
                 // Avoid parallel saves by awaiting the current one (requires async context)
                 if (!c.user._savePromise) {
@@ -188,7 +188,7 @@ module.exports = packet = {
                 }
             
                 // Broadcast to other clients
-                c.broadcastroom(packet.build(["POS", c.user.username, data.target_x, data.target_y, data.hat]));
+                c.broadcastroom(packet.build(["POS", c.user.username, data.target_x, data.target_y, data.animation, data.direction]));
                 break;
             }
                 
