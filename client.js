@@ -37,11 +37,11 @@ module.exports = function() {
                     String(otherClient.user.skin_colour || ""),
                     String(otherClient.user.hair_colour || ""),
                     String(otherClient.user.hair || ""),
-                    Number(otherClient.user.hp) || 0,
-                    Number(otherClient.user.hpExperience) || 0,
-                    Number(otherClient.user.meleeExperience) || 0,
-                    Number(otherClient.user.defenceExperience) || 0,
-                    Number(otherClient.user.farmingExperience) || 0
+                    String(otherClient.user.hp) || 0,
+                    String(otherClient.user.hpExperience) || 0,
+                    String(otherClient.user.meleeExperience) || 0,
+                    String(otherClient.user.defenceExperience) || 0,
+                    String(otherClient.user.farmingExperience) || 0
                 ];
     
                 // Ensure HP is not negative
@@ -69,11 +69,11 @@ module.exports = function() {
                 String(client.user.skin_colour || ""),
                 String(client.user.hair_colour || ""),
                 String(client.user.hair || ""),
-                Number(client.user.hp) || 0,
-                Number(client.user.hpExperience) || 0,
-                Number(client.user.meleeExperience) || 0,
-                Number(client.user.defenceExperience) || 0,
-                Number(client.user.farmingExperience) || 0
+                String(client.user.hp) || 0,
+                String(client.user.hpExperience) || 0,
+                String(client.user.meleeExperience) || 0,
+                String(client.user.defenceExperience) || 0,
+                String(client.user.farmingExperience) || 0
             ];
     
             // Log new client packet data
