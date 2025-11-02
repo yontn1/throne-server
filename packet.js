@@ -5,7 +5,6 @@ module.exports = packet = {
     build: function (params) {
         var packetParts = [];
         var packetSize = 0;
-
         params.forEach(function (param) {
             var buffer;
 
@@ -108,22 +107,7 @@ module.exports = packet = {
                                 c.user.item10,
                                 c.user.item11,
                                 c.user.item12,
-                                c.user.item13,
-                                c.user.item14,
-                                c.user.item15,
-                                c.user.item16,
-                                c.user.item17,
-                                c.user.item18,
-                                c.user.item19,
-                                c.user.item20,
-                                c.user.item21,
-                                c.user.item22,
-                                c.user.item23,
-                                c.user.item24,
-                                c.user.item25,
-                                c.user.item26,
-                                c.user.item27,
-                                c.user.item28,
+                                
                                 c.user.status,
                                 c.user.trousers_colour,
                                 c.user.top_colour,
@@ -136,10 +120,8 @@ module.exports = packet = {
                                 c.user.farmingExperience,
                                 c.user.cookingExperience,
                                 c.user.miningExperience,
-                                c.user.choppingExperience,
-                                c.user.fishingExperience,
-                                c.user.buildingExperience,
-                                c.user.smithingExperience
+                                c.user.choppingExperience
+ 
                             ]));
                             
                     } else {
@@ -166,15 +148,28 @@ module.exports = packet = {
                 });
                 break;
 
-            case "POS": {
-                const data = PacketModels.pos.parse(datapacket);
-            
-                // Update user position
+            case "POS": 
+                var data = PacketModels.pos.parse(datapacket);
+
+                // ----- 1. Update user position -----
                 c.user.pos_x = data.target_x;
                 c.user.pos_y = data.target_y;
-                
-            
-                // Avoid parallel saves by awaiting the current one (requires async context)
+
+                // ----- 2. Reset / start the 5-second inactivity timer -----
+                // Clear any previous timer for this user
+                if (c.user.positionTimeout) {
+                    clearTimeout(c.user.positionTimeout);
+                }
+
+                // Create a new 5-second timer
+                if (c.user.username !="AAA") {// Exclude admin user from timeout
+                    c.user.positionTimeout = setTimeout(() => {
+                    //    console.log(`[POS TIMEOUT] No position update from ${c.user.username} for 5 seconds – closing connection`);
+                        c.socket.close();          // Force-close the WebSocket
+                        c.end();                   // Run your existing disconnect logic (LEAVE broadcast, room cleanup)
+                    }, 5000);                      // 5 seconds
+                }
+                // ----- 3. Save position (debounced) -----
                 if (!c.user._savePromise) {
                     c.user._savePromise = c.user.save()
                         .catch(err => {
@@ -186,16 +181,21 @@ module.exports = packet = {
                 } else {
                     console.warn("Skipped save: already saving", c.user.username);
                 }
-            
-                // Broadcast to other clients
-                c.broadcastroom(packet.build(["POS", c.user.username, data.target_x, data.target_y, data.animation, data.direction]));
+
+                // ----- 4. Broadcast to other clients -----
+                c.broadcastroom(packet.build([
+                    "POS",
+                    c.user.username,
+                    data.target_x,
+                    data.target_y,
+                    data.animation,
+                    data.direction
+                ]));
                 break;
-            }
-                
 
             case "ATTACK": // Player attack
                 var data = PacketModels.attack.parse(datapacket);
-                c.broadcastroom(packet.build(["ATTACK", c.user.username, data.damage, data.face, data.target_name, data.source_name]));
+                c.broadcastroom(packet.build(["ATTACK", c.user.username, data.damage, data.face, data.target_name, data.source_name, data.style]));
                 break;
 
             case "DMG": // Player attack
@@ -218,42 +218,82 @@ module.exports = packet = {
                 c.broadcastroom(packet.build(["NPC", data.object, data.name, data.target_x, data.target_y, data.status, data.player_name]));
                 break;
 
+            case "NPCX":
+                console.log("Processing NPCX packet");
+                var npcData = PacketModels.npcx.parse(datapacket);
+                var npcs = [];
+                var NPCX_COUNT = 8; // Number of NPCs in NPCX packet
+
+                for (let i = 1; i <= NPCX_COUNT; i++) {
+                    npcs.push({
+                        name: npcData[`name${i}`],
+                        target_x: npcData[`target_x${i}`],
+                        target_y: npcData[`target_y${i}`]
+                    });
+                }
+                console.log("NPCX NPCs: ", JSON.stringify(npcs, null, 2));
+                npcs.forEach((npc, index) => {
+                if (npc.name !== "" && npc.name !== "skip") {
+                    const targetX = npc.target_x < 0 ? 0 : npc.target_x;
+                    const targetY = npc.target_y < 0 ? 0 : npc.target_y;
+
+                    setTimeout(() => {
+                        c.broadcastroom(packet.build([
+                            "NPC",
+                            npcData.object,
+                            npc.name,
+                            targetX,
+                            targetY,
+                            "alive",
+                            "non"
+                        ]));
+                    }, index * 1000/ NPCX_COUNT); // Spread out updates
+                }
+            });
+
+                break;
+
             case "CHANGE": // Request a change
                 var data = PacketModels.change.parse(datapacket);
                 c.broadcastroom(packet.build(["CHANGE", data.name, data.variable, data.value, data.amount, data.action]));
                 break;
 
             case "ACCEPT": // Save changes to the database
-            try {
-                var data = PacketModels.accept.parse(datapacket);
-                c.broadcastroom(packet.build(["ACCEPT", data.name, data.variable, data.value]));
+                try {
+                    var data = PacketModels.accept.parse(datapacket);
+                    c.broadcastroom(packet.build(["ACCEPT", data.name, data.variable, data.value]));
 
-                // Dynamically set the user property
-                if (data.variable in c.user) {
-                    c.user[data.variable] = data.value;
-                    if (!c.user._savePromise) {
-                        c.user._savePromise = c.user.save()
-                            .catch(err => {
-                                console.error("Failed to save user position:", err);
-                            })
-                            .finally(() => {
-                                c.user._savePromise = null;
-                            });
+                    // Dynamically set the user property
+                    if (data.variable in c.user) {
+                        c.user[data.variable] = data.value;
+
+                        const attemptSave = () => {
+                            if (!c.user._savePromise) {
+                                c.user._savePromise = c.user.save()
+                                    .catch(err => {
+                                        console.error("Failed to save user data:", err);
+                                    })
+                                    .finally(() => {
+                                        c.user._savePromise = null;
+                                    });
+                            } else {
+                                console.warn("Save already in progress, retrying in 0.5s for user:", c.user.username);
+                                setTimeout(attemptSave, 500); // Retry after 0.5 sec
+                            }
+                        };
+
+                        attemptSave(); // Start the first attempt
+
                     } else {
-                        console.warn("Skipped save: already saving", c.user.username);
+                        console.warn("Unknown user property received in ACCEPT:", data.variable);
                     }
-                    // Assuming a database save operation here (e.g., saving c.user to DB)
-                    // Replace with actual DB save logic, e.g., db.users.update(c.user)
-                    // await db.users.update({ id: c.user.id }, { [data.variable]: data.value });
-                } else {
-                    console.warn("Unknown user property received in ACCEPT:", data.variable);
+                } catch (error) {
+                    console.error("Error processing ACCEPT packet:", error);
+                    // Optionally notify client of failure
+                    // c.send(packet.build(["ERROR", "Failed to process ACCEPT"]));
                 }
-            } catch (error) {
-                console.error("Error processing ACCEPT packet:", error);
-                // Optionally notify client of failure
-                // c.send(packet.build(["ERROR", "Failed to process ACCEPT"]));
-            }
-            break;              
+                break;
+         
             
  
             

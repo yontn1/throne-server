@@ -143,6 +143,10 @@ module.exports = function() {
 
     // Method to handle client disconnection
     this.end = function() {
+        if (client.user && client.user.positionTimeout) {
+        clearTimeout(client.user.positionTimeout);
+        client.user.positionTimeout = null;
+    }
         console.log("Client closed");
         if (client.user && client.user.current_room && maps[client.user.current_room]) {
             const disconnectMessage = packet.build(["LEAVE", client.user.username]);

@@ -5,6 +5,7 @@ const { connect } = require('mongoose');
 // parser is the thing that receives a command from connection,
 var Parser = require('binary-parser').Parser;
 var StringOptions = {length: 99, zeroTerminated:true};
+const NPCX_COUNT = 8;
 
 // the module exoprts is called "PacketModels" and is being a package of data
 module.exports = PacketModels = {
@@ -39,7 +40,8 @@ module.exports = PacketModels = {
         .int32le("damage", StringOptions)
         .int32le("face", StringOptions)
         .string("target_name", StringOptions)
-        .string("source_name", StringOptions),
+        .string("source_name", StringOptions)
+        .string("style", StringOptions),
         
     dmg: new Parser().skip(1)
         .string("command", StringOptions)
@@ -73,6 +75,23 @@ module.exports = PacketModels = {
         .string("status", StringOptions)
         .string("player_name", StringOptions),
 
+            // multiple NPCs information about their locations and statuses
+    npcx: (() => {
+        let parser = new Parser().skip(1)
+            .string("command", StringOptions)
+            .string("object", StringOptions);
+        
+        // Dynamically add fields for NPCX_COUNT NPCs
+        for (let i = 1; i <= NPCX_COUNT; i++) {
+            parser = parser
+                .string(`name${i}`, StringOptions)
+                .int32le(`target_x${i}`)
+                .int32le(`target_y${i}`);
+        }
+        
+        return parser;
+    })(),
+        
     // a players request to change one of its variables
     change: new Parser().skip(1)
         .string("command", StringOptions)
