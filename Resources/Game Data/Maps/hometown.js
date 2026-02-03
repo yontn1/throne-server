@@ -3,7 +3,7 @@
 exports.name = "Home Town";
 exports.room = "rm_map_home";
 
-exports.start_x = 100;
-exports.start_y = 100;
+exports.start_x = 3375;
+exports.start_y = 2250;
 
 exports.clients = [];

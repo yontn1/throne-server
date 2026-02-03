@@ -5,11 +5,12 @@ module.exports = packet = {
     build: function (params) {
         var packetParts = [];
         var packetSize = 0;
+        this.showlogs = false;
         params.forEach(function (param) {
             var buffer;
 
 
-            console.log(param);
+            if (this.showlogs) console.log(param);
             if (typeof param === 'string') {
                 buffer = Buffer.from(param, 'utf8');
                 buffer = Buffer.concat([buffer, Buffer.from([0])], buffer.length + 1); // Null-terminated string
@@ -20,7 +21,7 @@ module.exports = packet = {
                 buffer = Buffer.from("0", 'utf8');
                 buffer = Buffer.concat([buffer, Buffer.from([0])], buffer.length + 1); // Null-terminated string
 
-                console.log("WARNING: Unknown data type in packet builder!");
+                if (this.showlogs) console.log("WARNING: Unknown data type in packet builder!");
             }
 
             packetSize += buffer.length;
@@ -32,7 +33,7 @@ module.exports = packet = {
         size.writeUInt8(dataBuffer.length + 1, 0); // Packet size
 
         var finalPacket = Buffer.concat([size, dataBuffer], size.length + dataBuffer.length);
-        console.log(finalPacket);
+        if (this.showlogs) console.log(finalPacket);
         return finalPacket;
     },
 
@@ -54,7 +55,7 @@ module.exports = packet = {
     // Interpret what to do with a parsed packet
     interpret: function (c, datapacket) {
         var header = PacketModels.header.parse(datapacket); // Parse header
-        console.log("Interpret: " + header.command);
+        if (this.showlogs) console.log("Interpret: " + header.command);
 
         switch (header.command.toUpperCase()) {
             case "LOGIN":
@@ -63,7 +64,7 @@ module.exports = packet = {
                     if (result) {
                         c.user = user;
                         c.enterroom(c.user.current_room);
-                        console.log("Interpret: enterroom should have been called");
+                        if (this.showlogs)console.log("Interpret: enterroom should have been called");
 
                         /*     if (c.user && c.user.current_room) {
                                 c.broadcastroom(packet.build(["LEAVE", c.user.username]), c.user.current_room);
@@ -167,7 +168,7 @@ module.exports = packet = {
                     //    console.log(`[POS TIMEOUT] No position update from ${c.user.username} for 5 seconds – closing connection`);
                         c.socket.close();          // Force-close the WebSocket
                         c.end();                   // Run your existing disconnect logic (LEAVE broadcast, room cleanup)
-                    }, 5000);                      // 5 seconds
+                    }, 15000);                      // 15 seconds
                 }
                 // ----- 3. Save position (debounced) -----
                 if (!c.user._savePromise) {
@@ -219,7 +220,7 @@ module.exports = packet = {
                 break;
 
             case "NPCX":
-                console.log("Processing NPCX packet");
+                if (this.showlogs) console.log("Processing NPCX packet");
                 var npcData = PacketModels.npcx.parse(datapacket);
                 var npcs = [];
                 var NPCX_COUNT = 8; // Number of NPCs in NPCX packet
@@ -231,7 +232,7 @@ module.exports = packet = {
                         target_y: npcData[`target_y${i}`]
                     });
                 }
-                console.log("NPCX NPCs: ", JSON.stringify(npcs, null, 2));
+                if (this.showlogs) console.log("NPCX NPCs: ", JSON.stringify(npcs, null, 2));
                 npcs.forEach((npc, index) => {
                 if (npc.name !== "" && npc.name !== "skip") {
                     const targetX = npc.target_x < 0 ? 0 : npc.target_x;

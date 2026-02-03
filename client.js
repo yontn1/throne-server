@@ -2,6 +2,7 @@
 var now = require('performance-now');
 var _ = require('underscore');
 
+var showlogs = false;
 // Export the client module
 module.exports = function() {
     var client = this;
@@ -127,7 +128,7 @@ module.exports = function() {
                 // Parse the data buffer (you will need to adjust the parsing logic based on the actual format)
                 packet.parse(client, dataBuffer);
 
-                console.log("Received binary data of size:", packetSize);
+              // if (showlogs) console.log("Received binary data of size:", packetSize);
             } else {
                 console.error("Received non-binary data, expected buffer.");
             }
