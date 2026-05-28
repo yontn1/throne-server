@@ -1,4 +1,10 @@
 // Updated packet.js to work with modern Node.js Buffer API and WebSocket communications
+let requestGraph = null;
+try {
+    requestGraph = require('./requestGraph.js');
+} catch (error) {
+    requestGraph = null;
+}
 
 module.exports = packet = {
     // Build a packet from an array of JavaScript objects (strings, numbers)
@@ -56,6 +62,9 @@ module.exports = packet = {
     interpret: function (c, datapacket) {
         var header = PacketModels.header.parse(datapacket); // Parse header
         if (this.showlogs) console.log("Interpret: " + header.command);
+        if (requestGraph && typeof requestGraph.record === "function") {
+            requestGraph.record(header.command);
+        }
 
         switch (header.command.toUpperCase()) {
             case "LOGIN":
@@ -108,7 +117,7 @@ module.exports = packet = {
                                 c.user.item10,
                                 c.user.item11,
                                 c.user.item12,
-                                
+
                                 c.user.status,
                                 c.user.trousers_colour,
                                 c.user.top_colour,
@@ -121,10 +130,12 @@ module.exports = packet = {
                                 c.user.farmingExperience,
                                 c.user.cookingExperience,
                                 c.user.miningExperience,
-                                c.user.choppingExperience
- 
+                                c.user.choppingExperience,
+                                c.user.smithingExperience || "0",
+                                c.user.fishingExperience || "0"
+
                             ]));
-                            
+
                     } else {
                         c.socket.send(packet.build(["LOGIN", "FALSE"]));
                     }
@@ -149,7 +160,7 @@ module.exports = packet = {
                 });
                 break;
 
-            case "POS": 
+            case "POS":
                 var data = PacketModels.pos.parse(datapacket);
 
                 // ----- 1. Update user position -----
@@ -165,7 +176,7 @@ module.exports = packet = {
                 // Create a new 5-second timer
                 if (c.user.username !="AAA") {// Exclude admin user from timeout
                     c.user.positionTimeout = setTimeout(() => {
-                    //    console.log(`[POS TIMEOUT] No position update from ${c.user.username} for 5 seconds – closing connection`);
+                    //    console.log(`[POS TIMEOUT] No position update from ${c.user.username} for 5 seconds â€“ closing connection`);
                         c.socket.close();          // Force-close the WebSocket
                         c.end();                   // Run your existing disconnect logic (LEAVE broadcast, room cleanup)
                     }, 15000);                      // 15 seconds
@@ -196,7 +207,7 @@ module.exports = packet = {
 
             case "ATTACK": // Player attack
                 var data = PacketModels.attack.parse(datapacket);
-                c.broadcastroom(packet.build(["ATTACK", c.user.username, data.damage, data.face, data.target_name, data.source_name, data.style]));
+                c.broadcastroom(packet.build(["ATTACK", c.user.username, data.damage, data.face, data.target_name, data.source_name, data.style, data.attack_target_x, data.attack_target_y]));
                 break;
 
             case "DMG": // Player attack
@@ -259,6 +270,11 @@ module.exports = packet = {
                 c.broadcastroom(packet.build(["CHANGE", data.name, data.variable, data.value, data.amount, data.action]));
                 break;
 
+            case "FISHING":
+                var data = PacketModels.fishing.parse(datapacket);
+                c.broadcastroom(packet.build(["FISHING", data.name, data.target_x, data.target_y, data.direction, data.action]));
+                break;
+
             case "ACCEPT": // Save changes to the database
                 try {
                     var data = PacketModels.accept.parse(datapacket);
@@ -294,10 +310,10 @@ module.exports = packet = {
                     // c.send(packet.build(["ERROR", "Failed to process ACCEPT"]));
                 }
                 break;
-         
-            
- 
-            
+
+
+
+
 
             case "DROP": // Drop item
                 var data = PacketModels.drop.parse(datapacket);
@@ -308,11 +324,16 @@ module.exports = packet = {
                 var data = PacketModels.crop.parse(datapacket);
                 c.broadcastroom(packet.build(["CROP", data.type1, data.name2, data.stage3, data.action4, data.user_name5, data.target_x6, data.target_y7]));
                 break;
-                
+
+            case "HOUSE":
+                var data = PacketModels.house.parse(datapacket);
+                c.broadcastroom(packet.build(["HOUSE", data.target_x, data.target_y, data.config, data.user_name]));
+                break;
+
             case "BIND":
                 var data = PacketModels.bind.parse(datapacket);
                 c.broadcastuser(data.target_name, packet.build(["BIND", c.user.username, data.target_npc, data.action]));
-                break; 
+                break;
 
             case "SHOP":
                 var data = PacketModels.shop.parse(datapacket);

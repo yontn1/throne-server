@@ -5,6 +5,7 @@ var extend = require('extend');
 
 //Store the environment variable
 var environment = args.env || "test";
+var generateGraph = false// args.generateGraph === true || args.generateGraph === "true" || args.generateGraph === 1 || args.generateGraph === "1";
 
 //Common config... ie: name, version, max player etc...
 var common_conf = {
@@ -12,6 +13,7 @@ var common_conf = {
     version: "0.0.1",
     environment: environment,
     max_player: 100,
+    generateGraph: generateGraph,
     data_paths: {
         items: __dirname + "\\Game Data\\" + "Items\\",
         maps: __dirname + "\\Game Data\\" + "Maps\\"
@@ -40,4 +42,3 @@ extend(false, conf.production, common_conf);
 extend(false, conf.test, common_conf);
 
 module.exports = config = conf[environment];
-

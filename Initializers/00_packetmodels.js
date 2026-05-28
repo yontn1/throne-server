@@ -41,13 +41,15 @@ module.exports = PacketModels = {
         .int32le("face", StringOptions)
         .string("target_name", StringOptions)
         .string("source_name", StringOptions)
-        .string("style", StringOptions),
-        
+        .string("style", StringOptions)
+        .string("attack_target_x", StringOptions)
+        .string("attack_target_y", StringOptions),
+
     dmg: new Parser().skip(1)
         .string("command", StringOptions)
         .string("damage", StringOptions)
         .string("target_name", StringOptions)
-        .string("hp_percentage", StringOptions), 
+        .string("hp_percentage", StringOptions),
 
     ranger: new Parser().skip(1)
         .string("command", StringOptions)
@@ -80,7 +82,7 @@ module.exports = PacketModels = {
         let parser = new Parser().skip(1)
             .string("command", StringOptions)
             .string("object", StringOptions);
-        
+
         // Dynamically add fields for NPCX_COUNT NPCs
         for (let i = 1; i <= NPCX_COUNT; i++) {
             parser = parser
@@ -88,10 +90,10 @@ module.exports = PacketModels = {
                 .int32le(`target_x${i}`)
                 .int32le(`target_y${i}`);
         }
-        
+
         return parser;
     })(),
-        
+
     // a players request to change one of its variables
     change: new Parser().skip(1)
         .string("command", StringOptions)
@@ -99,6 +101,14 @@ module.exports = PacketModels = {
         .string("variable", StringOptions)
         .string("value", StringOptions)
         .string("amount", StringOptions)
+        .string("action", StringOptions),
+
+    fishing: new Parser().skip(1)
+        .string("command", StringOptions)
+        .string("name", StringOptions)
+        .string("target_x", StringOptions)
+        .string("target_y", StringOptions)
+        .string("direction", StringOptions)
         .string("action", StringOptions),
 
     //  an update from the player that its change has passed and it has to be saved on the database.
@@ -117,7 +127,7 @@ module.exports = PacketModels = {
         .string("item", StringOptions)
         .string("action", StringOptions)
         .string("user_name", StringOptions),
-        
+
     // handle crops
     crop: new Parser().skip(1)
         .string("command", StringOptions)
@@ -128,6 +138,13 @@ module.exports = PacketModels = {
         .string("user_name5", StringOptions)
         .string("target_x6", StringOptions)
         .string("target_y7", StringOptions),
+
+    house: new Parser().skip(1)
+        .string("command", StringOptions)
+        .string("target_x", StringOptions)
+        .string("target_y", StringOptions)
+        .string("config", StringOptions)
+        .string("user_name", StringOptions),
 
     // request connect
     bind: new Parser().skip(1)
