@@ -16,13 +16,13 @@ module.exports = function() {
         // Send the connection handshake packet to the client in binary format
         const handshakePacket = packet.build(["HELLO", now().toString()]);
         client.socket.send(handshakePacket);  // No JSON, send raw binary data
-        console.log('Client initiated');
+        // console.log('Client initiated');
     };
 
     // Method to handle room entry
     this.enterroom = function (selected_room) {
         if (maps[selected_room] && maps[selected_room].clients) {
-            console.log(`Client ${client.user.username} is entering room: ${selected_room}`);
+            // console.log(`Client ${client.user.username} is entering room: ${selected_room}`);
     
             // Notify the new client about all existing users in the room
             maps[selected_room].clients.forEach(function (otherClient) {
@@ -33,6 +33,7 @@ module.exports = function() {
                     Number(otherClient.user.pos_x) || 0,
                     Number(otherClient.user.pos_y) || 0,
                     String(otherClient.user.weapon || ""),
+                    String(otherClient.user.shield || "0"),
                     String(otherClient.user.trousers_colour || ""),
                     String(otherClient.user.top_colour || ""),
                     String(otherClient.user.skin_colour || ""),
@@ -46,16 +47,16 @@ module.exports = function() {
                 ];
     
                 // Ensure HP is not negative
-                if (packetData[10] < 0) {
-                    packetData[10] = 0;
+                if (packetData[11] < 0) {
+                    packetData[11] = 0;
                 }
     
                 // Log packet data for debugging
-                console.log(`Building ENTER packet for ${otherClient.user.username}:`, packetData);
+                // console.log(`Building ENTER packet for ${otherClient.user.username}:`, packetData);
     
                 const enterPacket = packet.build(packetData);
                 client.socket.send(enterPacket); // Send raw binary packet
-                console.log(`Sent ENTER packet to ${client.user.username} for existing user: ${otherClient.user.username}`);
+                // console.log(`Sent ENTER packet to ${client.user.username} for existing user: ${otherClient.user.username}`);
             });
     
             // Notify existing clients in the room about the new client
@@ -65,6 +66,7 @@ module.exports = function() {
                 Number(client.user.pos_x) || 0,
                 Number(client.user.pos_y) || 0,
                 String(client.user.weapon || ""),
+                String(client.user.shield || "0"),
                 String(client.user.trousers_colour || ""),
                 String(client.user.top_colour || ""),
                 String(client.user.skin_colour || ""),
@@ -78,19 +80,22 @@ module.exports = function() {
             ];
     
             // Log new client packet data
-            console.log(`Building new client packet for ${client.user.username}:`, newClientPacketData);
+            // console.log(`Building new client packet for ${client.user.username}:`, newClientPacketData);
     
             const newClientPacket = packet.build(newClientPacketData);
             maps[selected_room].clients.forEach(function (otherClient) {
                 otherClient.socket.send(newClientPacket); // Send raw binary packet
-                console.log(`Notified ${otherClient.user.username} about new user: ${client.user.username}`);
+                // console.log(`Notified ${otherClient.user.username} about new user: ${client.user.username}`);
             });
     
             // Add the new client to the room
             maps[selected_room].clients.push(client);
-            console.log(`Added ${client.user.username} to room: ${selected_room}`);
+            if (packet && typeof packet.sendFishSpotSnapshot === "function") {
+                packet.sendFishSpotSnapshot(client, selected_room);
+            }
+            // console.log(`Added ${client.user.username} to room: ${selected_room}`);
         } else {
-            console.log(`Room ${selected_room} does not exist or has no clients.`);
+            // console.log(`Room ${selected_room} does not exist or has no clients.`);
         }
     };
     
@@ -130,16 +135,16 @@ module.exports = function() {
 
               // if (showlogs) console.log("Received binary data of size:", packetSize);
             } else {
-                console.error("Received non-binary data, expected buffer.");
+                // console.error("Received non-binary data, expected buffer.");
             }
         } catch (e) {
-            console.error("Error parsing message", e);
+            // console.error("Error parsing message", e);
         }
     };  
 
     // Error handling method
     this.error = function(err) {
-        console.log("Client error:", err);
+        // console.log("Client error:", err);
     };
 
     // Method to handle client disconnection
@@ -148,7 +153,7 @@ module.exports = function() {
         clearTimeout(client.user.positionTimeout);
         client.user.positionTimeout = null;
     }
-        console.log("Client closed");
+        // console.log("Client closed");
         if (client.user && client.user.current_room && maps[client.user.current_room]) {
             const disconnectMessage = packet.build(["LEAVE", client.user.username]);
             maps[client.user.current_room].clients.forEach(function(otherClient) {

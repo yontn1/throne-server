@@ -4,6 +4,11 @@ const { build } = require('../packet');
 const { setMaxListeners } = require('ws');
 //use the database schema for the player in a form of JSON data structure
 var userSchema;
+var bankSlotSchema = new mongoose.Schema({
+    item: String,
+    amount: Number
+}, { _id: false });
+
 userSchema = new mongoose.Schema({
 
     username: {type: String, unique: true},
@@ -74,7 +79,8 @@ userSchema = new mongoose.Schema({
     choppingExperience: String,
     fishingExperience: String,
     buildingExperience: String,
-    smithingExperience: String
+    smithingExperience: String,
+    bank: {type: [bankSlotSchema], default: []}
 });
 
 // how to create a new user through registration process.
@@ -149,7 +155,8 @@ userSchema.statics.register = function(username, password, cb){
         choppingExperience: "0",
         fishingExperience: "0",
         buildingExperience: "0",
-        smithingExperience: "0"
+        smithingExperience: "0",
+        bank: []
     });
 
     new_user.save(function(err){

@@ -17,14 +17,14 @@ const serverOptions = useSecure ? {
 // Load the initializers
 const init_files = fs.readdirSync(__dirname + "/Initializers");
 init_files.forEach(function(initFile) {
-    console.log('Loading Initializer: ' + initFile);
+    // console.log('Loading Initializer: ' + initFile);
     require(__dirname + "/Initializers/" + initFile);
 });
 
 // Load the models
 const model_files = fs.readdirSync(__dirname + "/Models");
 model_files.forEach(function(modelFile) {
-    console.log('Loading Model: ' + modelFile);
+    // console.log('Loading Model: ' + modelFile);
     require(__dirname + "/Models/" + modelFile);
 });
 
@@ -32,7 +32,7 @@ model_files.forEach(function(modelFile) {
 maps = {};
 var map_files = fs.readdirSync(config.data_paths.maps);
 map_files.forEach(function(mapFile) {
-    console.log('Loading Map: ' + mapFile);
+    // console.log('Loading Map: ' + mapFile);
     var map = require(config.data_paths.maps + mapFile);
     maps[map.room] = map;
 });
@@ -52,7 +52,7 @@ server.listen({
 });
 
 wss.on('connection', function(socket) {
-    console.log("WebSocket connected");
+    // console.log("WebSocket connected");
 
     // Load the client class for handling individual connections
     const Client = require('./client.js');
@@ -74,15 +74,15 @@ wss.on('connection', function(socket) {
 
     // Handle client disconnection
     socket.on('close', function() {
-        console.log("WebSocket client disconnected");
+        // console.log("WebSocket client disconnected");
         thisClient.end();
     });
 
     // Handle WebSocket errors
     socket.on('error', function(error) {
-        console.error("WebSocket error: ", error);
+        // console.error("WebSocket error: ", error);
         thisClient.error(error);
     });
 });
 
-console.log(`Initialize Completed, WebSocket Server running on port: ${config.port} for environment: ${config.environment} using ${useSecure ? 'wss://' : 'ws://'}`);
+// console.log(`Initialize Completed, WebSocket Server running on port: ${config.port} for environment: ${config.environment} using ${useSecure ? 'wss://' : 'ws://'}`);

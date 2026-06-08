@@ -29,10 +29,12 @@ module.exports = PacketModels = {
     // the player position and appearance update.
     pos: new Parser().skip(1)
         .string("command", StringOptions)
-        .int32le("target_x", StringOptions)
-        .int32le("target_y", StringOptions)
+        .int32le("exact_x", StringOptions)
+        .int32le("exact_y", StringOptions)
         .string("animation", StringOptions)
-        .string("direction", StringOptions),
+        .string("direction", StringOptions)
+        .int32le("projected_x", StringOptions)
+        .int32le("projected_y", StringOptions),
 
     // update about the player attack status.
     attack: new Parser().skip(1)
@@ -111,6 +113,14 @@ module.exports = PacketModels = {
         .string("direction", StringOptions)
         .string("action", StringOptions),
 
+    fishspot: new Parser().skip(1)
+        .string("command", StringOptions)
+        .string("action", StringOptions)
+        .string("spot_id", StringOptions)
+        .string("target_x", StringOptions)
+        .string("target_y", StringOptions)
+        .string("remaining", StringOptions),
+
     //  an update from the player that its change has passed and it has to be saved on the database.
     accept: new Parser().skip(1)
         .string("command", StringOptions)
@@ -162,4 +172,10 @@ module.exports = PacketModels = {
      .string("amount", StringOptions)
      .string("price", StringOptions)
      .string("action", StringOptions),
+
+    bank: new Parser().skip(1)
+     .string("command", StringOptions)
+     .string("action", StringOptions)
+     .string("item", StringOptions)
+     .string("amount", StringOptions),
 }
