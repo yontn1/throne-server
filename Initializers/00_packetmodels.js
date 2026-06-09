@@ -69,6 +69,14 @@ module.exports = PacketModels = {
         .string("command", StringOptions)
         .string("chatMessage", StringOptions),
 
+    pfx: new Parser().skip(1)
+        .string("command", StringOptions)
+        .string("user", StringOptions)
+        .string("kind", StringOptions)
+        .string("target_x", StringOptions)
+        .string("target_y", StringOptions)
+        .string("item", StringOptions),
+
     // the npc's information about its location and status.
     npc: new Parser().skip(1)
         .string("command", StringOptions)

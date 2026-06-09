@@ -34,6 +34,9 @@ module.exports = function() {
                     Number(otherClient.user.pos_y) || 0,
                     String(otherClient.user.weapon || ""),
                     String(otherClient.user.shield || "0"),
+                    String(otherClient.user.hat || "0"),
+                    String(otherClient.user.top || "0"),
+                    String(otherClient.user.trousers || "0"),
                     String(otherClient.user.trousers_colour || ""),
                     String(otherClient.user.top_colour || ""),
                     String(otherClient.user.skin_colour || ""),
@@ -47,8 +50,8 @@ module.exports = function() {
                 ];
     
                 // Ensure HP is not negative
-                if (packetData[11] < 0) {
-                    packetData[11] = 0;
+                if (packetData[14] < 0) {
+                    packetData[14] = 0;
                 }
     
                 // Log packet data for debugging
@@ -67,6 +70,9 @@ module.exports = function() {
                 Number(client.user.pos_y) || 0,
                 String(client.user.weapon || ""),
                 String(client.user.shield || "0"),
+                String(client.user.hat || "0"),
+                String(client.user.top || "0"),
+                String(client.user.trousers || "0"),
                 String(client.user.trousers_colour || ""),
                 String(client.user.top_colour || ""),
                 String(client.user.skin_colour || ""),

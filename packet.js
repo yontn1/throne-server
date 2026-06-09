@@ -20,7 +20,10 @@ const NON_STACKABLE_ITEMS = new Set([
     "11144", // Adamant spear
     "11145", // Fishing rod
     "11152", // Pickaxe
-    "11155"  // Hammer
+    "11155", // Hammer
+    "11157", // Iron helmet
+    "11158", // Iron platebody
+    "11159"  // Iron platelegs
 ]);
 const sessionFishSpotsByRoom = {};
 
@@ -665,6 +668,11 @@ module.exports = packet = {
             case "CHAT": // Send and receive chat
                 var data = PacketModels.chat.parse(datapacket);
                 c.broadcastroom(packet.build(["CHAT", c.user.username, data.chatMessage]));
+                break;
+
+            case "PFX":
+                var data = PacketModels.pfx.parse(datapacket);
+                c.broadcastroom(packet.build(["PFX", data.user, data.kind, data.target_x, data.target_y, data.item]));
                 break;
 
             case "NPC": // NPC location and status
