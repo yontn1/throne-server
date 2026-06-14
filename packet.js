@@ -12,6 +12,7 @@ const INVENTORY_SLOT_COUNT = 12;
 const BANK_DEBUG = false;
 const NON_STACKABLE_ITEMS = new Set([
     "11112", // Sword
+    "11160", // Long sword
     "11119", // Axe
     "11122", // Shield
     "11129", // Mithril sword
@@ -568,7 +569,8 @@ module.exports = packet = {
                                 c.user.miningExperience,
                                 c.user.choppingExperience,
                                 c.user.smithingExperience || "0",
-                                c.user.fishingExperience || "0"
+                                c.user.fishingExperience || "0",
+                                c.user.eye_colour || "0"
 
                             ]));
 
@@ -581,7 +583,7 @@ module.exports = packet = {
             case "LOGIN2":
                 c.socket.send(packet.build(["LOGIN2",
                     c.user.item1, c.user.item2, c.user.item3, c.user.item4, c.user.item5, c.user.item6,
-                    c.user.status, c.user.trousers_colour, c.user.top_colour, c.user.skin_colour, c.user.hair_colour, c.user.hair]));
+                    c.user.status, c.user.trousers_colour, c.user.top_colour, c.user.skin_colour, c.user.hair_colour, c.user.hair, c.user.eye_colour || "0"]));
 
                 break;
 

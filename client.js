@@ -46,7 +46,8 @@ module.exports = function() {
                     String(otherClient.user.hpExperience) || 0,
                     String(otherClient.user.meleeExperience) || 0,
                     String(otherClient.user.defenceExperience) || 0,
-                    String(otherClient.user.farmingExperience) || 0
+                    String(otherClient.user.farmingExperience) || 0,
+                    String(otherClient.user.eye_colour || "0")
                 ];
     
                 // Ensure HP is not negative
@@ -82,7 +83,8 @@ module.exports = function() {
                 String(client.user.hpExperience) || 0,
                 String(client.user.meleeExperience) || 0,
                 String(client.user.defenceExperience) || 0,
-                String(client.user.farmingExperience) || 0
+                String(client.user.farmingExperience) || 0,
+                String(client.user.eye_colour || "0")
             ];
     
             // Log new client packet data
