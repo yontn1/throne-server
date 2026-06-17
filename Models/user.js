@@ -8,6 +8,15 @@ var bankSlotSchema = new mongoose.Schema({
     item: String,
     amount: Number
 }, { _id: false });
+var townJobOfferSchema = new mongoose.Schema({
+    id: String,
+    tier: String,
+    item: String,
+    amount: Number,
+    money: Number,
+    reputation: Number,
+    requiredChariotLevel: Number
+}, { _id: false });
 
 userSchema = new mongoose.Schema({
 
@@ -81,7 +90,13 @@ userSchema = new mongoose.Schema({
     fishingExperience: String,
     buildingExperience: String,
     smithingExperience: String,
-    bank: {type: [bankSlotSchema], default: []}
+    bank: {type: [bankSlotSchema], default: []},
+    townReputation: {type: Number, default: 0},
+    townJobs: {
+        dateKey: String,
+        offers: {type: [townJobOfferSchema], default: []},
+        completed: {type: [String], default: []}
+    }
 });
 
 // how to create a new user through registration process.
@@ -158,7 +173,13 @@ userSchema.statics.register = function(username, password, cb){
         fishingExperience: "0",
         buildingExperience: "0",
         smithingExperience: "0",
-        bank: []
+        bank: [],
+        townReputation: 0,
+        townJobs: {
+            dateKey: "",
+            offers: [],
+            completed: []
+        }
     });
 
     new_user.save(function(err){

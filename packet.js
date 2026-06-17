@@ -6,10 +6,13 @@ try {
     requestGraph = null;
 }
 
+const townJobConfig = require('./Resources/townJobs.js');
+
 const BANK_SLOT_LIMIT = 50;
 const BANK_STACK_LIMIT = 2000000;
 const INVENTORY_SLOT_COUNT = 12;
 const BANK_DEBUG = false;
+const TOWN_JOB_COUNTS = { low: 3, mid: 2, high: 1 };
 const NON_STACKABLE_ITEMS = new Set([
     "11112", // Sword
     "11160", // Long sword
@@ -24,7 +27,15 @@ const NON_STACKABLE_ITEMS = new Set([
     "11155", // Hammer
     "11157", // Iron helmet
     "11158", // Iron platebody
-    "11159"  // Iron platelegs
+    "11159", // Iron platelegs
+    "11161", // Mithril helmet
+    "11162", // Mithril platebody
+    "11163", // Mithril platelegs
+    "11164", // Mithril shield
+    "11165", // Adamant helmet
+    "11166", // Adamant platebody
+    "11167", // Adamant platelegs
+    "11168"  // Adamant shield
 ]);
 const sessionFishSpotsByRoom = {};
 
@@ -190,6 +201,266 @@ function sendBankError(c, message) {
     c.socket.send(packet.build(["BANK", "ERROR", String(message || "Bank action failed")]));
 }
 
+function townJobDateKey(date = new Date()) {
+    return date.toISOString().slice(0, 10);
+}
+
+function townJobHash(text) {
+    let hash = 2166136261;
+    const value = String(text || "");
+    for (let i = 0; i < value.length; i++) {
+        hash ^= value.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+}
+
+function townJobRandom(seedState) {
+    seedState.value = (Math.imul(seedState.value, 1664525) + 1013904223) >>> 0;
+    return seedState.value / 4294967296;
+}
+
+function normalizeTownJobOffer(job, tier) {
+    return {
+        id: String(job.id),
+        tier: String(tier),
+        item: String(job.item),
+        amount: clampInt(job.amount, 1, BANK_STACK_LIMIT),
+        money: clampInt(job.money, 0, BANK_STACK_LIMIT),
+        reputation: clampInt(job.reputation, 0, BANK_STACK_LIMIT),
+        requiredChariotLevel: clampInt(job.requiredChariotLevel || 0, 0, BANK_STACK_LIMIT)
+    };
+}
+
+function pickTownJobsForTier(username, dateKey, tier, count) {
+    const source = Array.isArray(townJobConfig[tier]) ? townJobConfig[tier] : [];
+    const jobs = source.map(job => normalizeTownJobOffer(job, tier));
+    const seedState = { value: townJobHash(`${username}|${dateKey}|${tier}`) };
+
+    for (let i = jobs.length - 1; i > 0; i--) {
+        const j = Math.floor(townJobRandom(seedState) * (i + 1));
+        const tmp = jobs[i];
+        jobs[i] = jobs[j];
+        jobs[j] = tmp;
+    }
+
+    return jobs.slice(0, Math.min(count, jobs.length));
+}
+
+function generateTownJobOffers(username, dateKey) {
+    return []
+        .concat(pickTownJobsForTier(username, dateKey, "low", TOWN_JOB_COUNTS.low))
+        .concat(pickTownJobsForTier(username, dateKey, "mid", TOWN_JOB_COUNTS.mid))
+        .concat(pickTownJobsForTier(username, dateKey, "high", TOWN_JOB_COUNTS.high));
+}
+
+function pickReplacementTownJob(username, townJobs, completedOffer) {
+    const tier = String(completedOffer.tier || "low");
+    const source = Array.isArray(townJobConfig[tier]) ? townJobConfig[tier] : [];
+    const activeIds = new Set((townJobs.offers || [])
+        .filter(offer => String(offer.id) !== String(completedOffer.id))
+        .map(offer => String(offer.id)));
+    const candidates = source
+        .map(job => normalizeTownJobOffer(job, tier))
+        .filter(job => !activeIds.has(String(job.id)) && String(job.id) !== String(completedOffer.id));
+
+    if (candidates.length <= 0) return null;
+
+    const seedState = {
+        value: townJobHash(`${username}|${townJobs.dateKey}|${tier}|${completedOffer.id}|${Date.now()}`)
+    };
+    const index = Math.floor(townJobRandom(seedState) * candidates.length);
+    return candidates[index];
+}
+
+function replaceCompletedTownJob(user, townJobs, completedOffer) {
+    const index = townJobs.offers.findIndex(entry => String(entry.id) === String(completedOffer.id));
+    if (index < 0) return false;
+
+    const replacement = pickReplacementTownJob(user.username, townJobs, completedOffer);
+    if (!replacement) return false;
+
+    townJobs.offers[index] = replacement;
+    townJobs.completed = Array.isArray(townJobs.completed)
+        ? townJobs.completed.filter(id => String(id) !== String(completedOffer.id))
+        : [];
+    return true;
+}
+
+function normalizeTownReputation(user) {
+    user.townReputation = clampInt(user.townReputation || 0, 0, BANK_STACK_LIMIT);
+    return user.townReputation;
+}
+
+function ensureTownJobs(user) {
+    const dateKey = townJobDateKey();
+    let changed = false;
+    const townJobs = user.townJobs && typeof user.townJobs === "object" ? user.townJobs : {};
+    const completed = Array.isArray(townJobs.completed) ? townJobs.completed.map(String) : [];
+    const offers = Array.isArray(townJobs.offers) ? townJobs.offers : [];
+
+    if (townJobs.dateKey !== dateKey || offers.length !== 6) {
+        user.townJobs = {
+            dateKey,
+            offers: generateTownJobOffers(user.username, dateKey),
+            completed: []
+        };
+        changed = true;
+    } else {
+        user.townJobs = {
+            dateKey,
+            offers: offers.map(offer => normalizeTownJobOffer(offer, offer.tier || "low")),
+            completed
+        };
+        changed = true;
+    }
+
+    normalizeTownReputation(user);
+    if (changed && typeof user.markModified === "function") user.markModified("townJobs");
+    return user.townJobs;
+}
+
+function sendTownJobError(c, message) {
+    if (c && c.socket) c.socket.send(packet.build(["TOWNJOB", "ERROR", String(message || "Job board request failed")]));
+}
+
+function sendTownJobSnapshot(c) {
+    const townJobs = ensureTownJobs(c.user);
+    const completed = Array.isArray(townJobs.completed) ? townJobs.completed.map(String) : [];
+
+    c.socket.send(packet.build(["TOWNJOB", "START", String(normalizeTownReputation(c.user)), String(townJobs.dateKey || "")]));
+    townJobs.offers.forEach(function(offer) {
+        c.socket.send(packet.build([
+            "TOWNJOB",
+            "OFFER",
+            String(offer.id),
+            String(offer.tier),
+            String(offer.item),
+            String(offer.amount),
+            String(offer.money),
+            String(offer.reputation),
+            String(offer.requiredChariotLevel || 0),
+            completed.indexOf(String(offer.id)) >= 0 ? "1" : "0"
+        ]));
+    });
+    c.socket.send(packet.build(["TOWNJOB", "END"]));
+}
+
+function saveUserQueued(c, afterSave, onError) {
+    const attemptSave = () => {
+        if (c.user._savePromise) {
+            setTimeout(attemptSave, 100);
+            return;
+        }
+
+        const savePromise = c.user.save();
+        if (savePromise && typeof savePromise.then === "function") {
+            c.user._savePromise = savePromise
+                .then(() => {
+                    if (typeof afterSave === "function") afterSave();
+                })
+                .catch(error => {
+                    if (typeof onError === "function") onError(error);
+                })
+                .finally(() => {
+                    c.user._savePromise = null;
+                });
+        } else if (typeof afterSave === "function") {
+            afterSave();
+        }
+    };
+
+    attemptSave();
+}
+
+function handleTownJobPacket(c, datapacket) {
+    try {
+        if (!c.user) {
+            sendTownJobError(c, "Not logged in");
+            return;
+        }
+
+        const data = PacketModels.townjob.parse(datapacket);
+        const action = String(data.action || "").toUpperCase();
+
+        if (action === "OPEN") {
+            ensureTownJobs(c.user);
+            saveUserQueued(c, null, null);
+            sendTownJobSnapshot(c);
+            return;
+        }
+
+        if (action !== "COMPLETE") {
+            sendTownJobError(c, "Unknown job board action");
+            return;
+        }
+
+        const townJobs = ensureTownJobs(c.user);
+        const jobId = String(data.job_id || "");
+        const offer = townJobs.offers.find(entry => String(entry.id) === jobId);
+        if (!offer) {
+            sendTownJobError(c, "That job is no longer posted");
+            return;
+        }
+
+        townJobs.completed = Array.isArray(townJobs.completed) ? townJobs.completed.map(String) : [];
+        if (townJobs.completed.indexOf(jobId) >= 0) {
+            sendTownJobError(c, "That job is already complete");
+            return;
+        }
+
+        const chariotLevel = clampInt(data.chariot_level || 0, 0, BANK_STACK_LIMIT);
+        const requiredChariotLevel = clampInt(offer.requiredChariotLevel || 0, 0, BANK_STACK_LIMIT);
+        if (requiredChariotLevel > 0 && chariotLevel < requiredChariotLevel) {
+            sendTownJobError(c, `You need a level ${requiredChariotLevel} chariot for that job`);
+            return;
+        }
+
+        const inventory = readInventory(c.user);
+        const requiredItem = String(offer.item);
+        const requiredAmount = clampInt(offer.amount, 1, BANK_STACK_LIMIT);
+        if (countInventoryItem(inventory, requiredItem) < requiredAmount) {
+            sendTownJobError(c, "You do not have the requested goods");
+            return;
+        }
+
+        const removed = removeFromInventory(inventory, requiredItem, requiredAmount);
+        if (removed < requiredAmount) {
+            sendTownJobError(c, "Could not collect the requested goods");
+            return;
+        }
+
+        writeInventory(c.user, inventory);
+        c.user.money = Math.min(BANK_STACK_LIMIT, clampInt(c.user.money || 0, 0, BANK_STACK_LIMIT) + clampInt(offer.money, 0, BANK_STACK_LIMIT));
+        c.user.townReputation = Math.min(BANK_STACK_LIMIT, normalizeTownReputation(c.user) + clampInt(offer.reputation, 0, BANK_STACK_LIMIT));
+        if (!replaceCompletedTownJob(c.user, townJobs, offer)) {
+            townJobs.completed.push(jobId);
+        }
+        c.user.townJobs = townJobs;
+        if (typeof c.user.markModified === "function") c.user.markModified("townJobs");
+
+        saveUserQueued(
+            c,
+            () => {
+                sendInventorySnapshot(c, inventory);
+                sendTownJobSnapshot(c);
+                c.socket.send(packet.build([
+                    "TOWNJOB",
+                    "DONE",
+                    jobId,
+                    String(offer.money),
+                    String(offer.reputation),
+                    String(c.user.money),
+                    String(c.user.townReputation)
+                ]));
+            },
+            () => sendTownJobError(c, "Could not save job reward")
+        );
+    } catch (error) {
+        sendTownJobError(c, "Job board request failed");
+    }
+}
+
 function getSessionFishSpots(room) {
     const roomKey = String(room || "");
     if (!sessionFishSpotsByRoom[roomKey]) sessionFishSpotsByRoom[roomKey] = [];
@@ -198,6 +469,23 @@ function getSessionFishSpots(room) {
 
 function clampFishSpotRemaining(value) {
     return clampInt(value, 0, 150);
+}
+
+function normalizeFishSpotType(value) {
+    const fishType = String(value || "anchovy").toLowerCase();
+    return fishType === "trout" || fishType === "salmon" ? fishType : "anchovy";
+}
+
+function readPacketStrings(buffer) {
+    const fields = [];
+    let start = 1;
+    for (let i = 1; i < buffer.length; i++) {
+        if (buffer[i] === 0) {
+            fields.push(buffer.slice(start, i).toString("utf8"));
+            start = i + 1;
+        }
+    }
+    return fields;
 }
 
 function broadcastRoomIncluding(room, packetData) {
@@ -218,7 +506,8 @@ function sendFishSpotSnapshot(c, room) {
             String(spot.id),
             String(spot.x),
             String(spot.y),
-            String(spot.remaining)
+            String(spot.remaining),
+            normalizeFishSpotType(spot.fishType)
         ]));
     });
 }
@@ -226,6 +515,7 @@ function sendFishSpotSnapshot(c, room) {
 function handleFishSpotPacket(c, datapacket) {
     if (!c.user) return;
     const data = PacketModels.fishspot.parse(datapacket);
+    const rawFields = readPacketStrings(datapacket);
     const room = c.user.current_room;
     const spots = getSessionFishSpots(room);
     const action = String(data.action || "").toUpperCase();
@@ -233,33 +523,34 @@ function handleFishSpotPacket(c, datapacket) {
     const x = clampInt(data.target_x, 0, 65535);
     const y = clampInt(data.target_y, 0, 65535);
     const remaining = clampFishSpotRemaining(data.remaining);
+    const fishType = normalizeFishSpotType(rawFields[6] || data.fish_type);
 
     if (!spotId) return;
 
     const existingIndex = spots.findIndex(spot => spot.id === spotId);
 
     if (action === "CREATE" || action === "SYNC") {
-        const spot = { id: spotId, x, y, remaining: remaining || 150 };
+        const spot = { id: spotId, x, y, remaining: remaining || 150, fishType };
         if (existingIndex >= 0) {
             spots[existingIndex] = spot;
         } else {
             spots.push(spot);
         }
-        broadcastRoomIncluding(room, packet.build(["FISHSPOT", "CREATE", spot.id, String(spot.x), String(spot.y), String(spot.remaining)]));
+        broadcastRoomIncluding(room, packet.build(["FISHSPOT", "CREATE", spot.id, String(spot.x), String(spot.y), String(spot.remaining), normalizeFishSpotType(spot.fishType)]));
         return;
     }
 
     if (action === "UPDATE") {
         if (existingIndex >= 0) {
             spots[existingIndex].remaining = remaining;
-            broadcastRoomIncluding(room, packet.build(["FISHSPOT", "UPDATE", spotId, String(x), String(y), String(remaining)]));
+            broadcastRoomIncluding(room, packet.build(["FISHSPOT", "UPDATE", spotId, String(x), String(y), String(remaining), normalizeFishSpotType(spots[existingIndex].fishType)]));
         }
         return;
     }
 
     if (action === "DESTROY") {
         if (existingIndex >= 0) spots.splice(existingIndex, 1);
-        broadcastRoomIncluding(room, packet.build(["FISHSPOT", "DESTROY", spotId, String(x), String(y), "0"]));
+        broadcastRoomIncluding(room, packet.build(["FISHSPOT", "DESTROY", spotId, String(x), String(y), "0", fishType]));
     }
 }
 
@@ -570,7 +861,8 @@ module.exports = packet = {
                                 c.user.choppingExperience,
                                 c.user.smithingExperience || "0",
                                 c.user.fishingExperience || "0",
-                                c.user.eye_colour || "0"
+                                c.user.eye_colour || "0",
+                                String(c.user.townReputation || 0)
 
                             ]));
 
@@ -724,11 +1016,32 @@ module.exports = packet = {
 
             case "FISHING":
                 var data = PacketModels.fishing.parse(datapacket);
-                c.broadcastroom(packet.build(["FISHING", data.name, data.target_x, data.target_y, data.direction, data.action]));
+                var rawFishingFields = readPacketStrings(datapacket);
+                var fishingActions = ["START", "REQUEST", "STOP"];
+                var fishingName = rawFishingFields[1] || data.name;
+                var fishingTargetX = data.target_x;
+                var fishingTargetY = data.target_y;
+                var fishingDirection = data.direction || "0";
+                var fishingAction = data.action || "";
+                if (fishingActions.indexOf(String(rawFishingFields[2] || "").toUpperCase()) != -1) {
+                    fishingAction = String(rawFishingFields[2]).toUpperCase();
+                    fishingTargetX = rawFishingFields[3] || "0";
+                    fishingTargetY = rawFishingFields[4] || "0";
+                    fishingDirection = rawFishingFields[5] || "0";
+                }
+                if (fishingActions.indexOf(String(fishingDirection).toUpperCase()) != -1 && fishingActions.indexOf(String(fishingAction).toUpperCase()) == -1) {
+                    fishingAction = String(fishingDirection).toUpperCase();
+                    fishingDirection = "0";
+                }
+                c.broadcastroom(packet.build(["FISHING", fishingName, fishingTargetX, fishingTargetY, String(fishingDirection), String(fishingAction).toUpperCase()]));
                 break;
 
             case "FISHSPOT":
                 handleFishSpotPacket(c, datapacket);
+                break;
+
+            case "TOWNJOB":
+                handleTownJobPacket(c, datapacket);
                 break;
 
             case "ACCEPT": // Save changes to the database

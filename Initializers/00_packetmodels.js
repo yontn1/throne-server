@@ -186,4 +186,10 @@ module.exports = PacketModels = {
      .string("action", StringOptions)
      .string("item", StringOptions)
      .string("amount", StringOptions),
+
+    townjob: new Parser().skip(1)
+     .string("command", StringOptions)
+     .string("action", StringOptions)
+     .string("job_id", StringOptions)
+     .string("chariot_level", StringOptions),
 }
