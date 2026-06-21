@@ -11,23 +11,23 @@ const NPCX_COUNT = 8;
 module.exports = PacketModels = {
 
     // a mandatory part of each package is the header, which is telling the kind of the command.
-    header: new Parser().skip(1)
+    header: new Parser().skip(2)
         .string("command", StringOptions),
 
     // the login request information.
-    login: new Parser().skip(1)
+    login: new Parser().skip(2)
         .string("command", StringOptions)
         .string("username", StringOptions)
         .string("password", StringOptions),
 
     // the registration request information.
-    register: new Parser().skip(1)
+    register: new Parser().skip(2)
         .string("command", StringOptions)
         .string("username", StringOptions)
         .string("password", StringOptions),
 
     // the player position and appearance update.
-    pos: new Parser().skip(1)
+    pos: new Parser().skip(2)
         .string("command", StringOptions)
         .int32le("exact_x", StringOptions)
         .int32le("exact_y", StringOptions)
@@ -37,7 +37,7 @@ module.exports = PacketModels = {
         .int32le("projected_y", StringOptions),
 
     // update about the player attack status.
-    attack: new Parser().skip(1)
+    attack: new Parser().skip(2)
         .string("command", StringOptions)
         .int32le("damage", StringOptions)
         .int32le("face", StringOptions)
@@ -47,13 +47,13 @@ module.exports = PacketModels = {
         .string("attack_target_x", StringOptions)
         .string("attack_target_y", StringOptions),
 
-    dmg: new Parser().skip(1)
+    dmg: new Parser().skip(2)
         .string("command", StringOptions)
         .string("damage", StringOptions)
         .string("target_name", StringOptions)
         .string("hp_percentage", StringOptions),
 
-    ranger: new Parser().skip(1)
+    ranger: new Parser().skip(2)
         .string("command", StringOptions)
         .string("name", StringOptions)
         .int32le("damage", StringOptions)
@@ -65,11 +65,11 @@ module.exports = PacketModels = {
         .string("arrow", StringOptions),
 
     // the player sending of chat request.
-    chat: new Parser().skip(1)
+    chat: new Parser().skip(2)
         .string("command", StringOptions)
         .string("chatMessage", StringOptions),
 
-    pfx: new Parser().skip(1)
+    pfx: new Parser().skip(2)
         .string("command", StringOptions)
         .string("user", StringOptions)
         .string("kind", StringOptions)
@@ -78,7 +78,7 @@ module.exports = PacketModels = {
         .string("item", StringOptions),
 
     // the npc's information about its location and status.
-    npc: new Parser().skip(1)
+    npc: new Parser().skip(2)
         .string("command", StringOptions)
         .string("object", StringOptions)
         .string("name", StringOptions)
@@ -89,7 +89,7 @@ module.exports = PacketModels = {
 
             // multiple NPCs information about their locations and statuses
     npcx: (() => {
-        let parser = new Parser().skip(1)
+        let parser = new Parser().skip(2)
             .string("command", StringOptions)
             .string("object", StringOptions);
 
@@ -105,7 +105,7 @@ module.exports = PacketModels = {
     })(),
 
     // a players request to change one of its variables
-    change: new Parser().skip(1)
+    change: new Parser().skip(2)
         .string("command", StringOptions)
         .string("name", StringOptions)
         .string("variable", StringOptions)
@@ -113,7 +113,7 @@ module.exports = PacketModels = {
         .string("amount", StringOptions)
         .string("action", StringOptions),
 
-    fishing: new Parser().skip(1)
+    fishing: new Parser().skip(2)
         .string("command", StringOptions)
         .string("name", StringOptions)
         .string("target_x", StringOptions)
@@ -121,7 +121,7 @@ module.exports = PacketModels = {
         .string("direction", StringOptions)
         .string("action", StringOptions),
 
-    fishspot: new Parser().skip(1)
+    fishspot: new Parser().skip(2)
         .string("command", StringOptions)
         .string("action", StringOptions)
         .string("spot_id", StringOptions)
@@ -130,14 +130,14 @@ module.exports = PacketModels = {
         .string("remaining", StringOptions),
 
     //  an update from the player that its change has passed and it has to be saved on the database.
-    accept: new Parser().skip(1)
+    accept: new Parser().skip(2)
         .string("command", StringOptions)
         .string("name", StringOptions)
         .string("variable", StringOptions)
         .string("value", StringOptions),
 
     // dropping an item
-    drop: new Parser().skip(1)
+    drop: new Parser().skip(2)
         .string("command", StringOptions)
         .string("name", StringOptions)
         .int32le("target_x", StringOptions)
@@ -147,7 +147,7 @@ module.exports = PacketModels = {
         .string("user_name", StringOptions),
 
     // handle crops
-    crop: new Parser().skip(1)
+    crop: new Parser().skip(2)
         .string("command", StringOptions)
         .string("type1", StringOptions)
         .string("name2", StringOptions)
@@ -157,7 +157,7 @@ module.exports = PacketModels = {
         .string("target_x6", StringOptions)
         .string("target_y7", StringOptions),
 
-    house: new Parser().skip(1)
+    house: new Parser().skip(2)
         .string("command", StringOptions)
         .string("target_x", StringOptions)
         .string("target_y", StringOptions)
@@ -165,14 +165,14 @@ module.exports = PacketModels = {
         .string("user_name", StringOptions),
 
     // request connect
-    bind: new Parser().skip(1)
+    bind: new Parser().skip(2)
     .string("command", StringOptions)
     .string("target_name", StringOptions)
     .string("target_npc", StringOptions)
     .string("action", StringOptions),
 
      // request info
-    shop: new Parser().skip(1)
+    shop: new Parser().skip(2)
      .string("command", StringOptions)
      .string("target_name", StringOptions)
      .string("target_npc", StringOptions)
@@ -181,15 +181,38 @@ module.exports = PacketModels = {
      .string("price", StringOptions)
      .string("action", StringOptions),
 
-    bank: new Parser().skip(1)
+    bank: new Parser().skip(2)
      .string("command", StringOptions)
      .string("action", StringOptions)
      .string("item", StringOptions)
      .string("amount", StringOptions),
 
-    townjob: new Parser().skip(1)
+    trade: new Parser().skip(2)
+     .string("command", StringOptions)
+     .string("action", StringOptions)
+     .string("target", StringOptions)
+     .string("slot", StringOptions)
+     .string("item", StringOptions)
+     .string("amount", StringOptions),
+
+    townjob: new Parser().skip(2)
      .string("command", StringOptions)
      .string("action", StringOptions)
      .string("job_id", StringOptions)
      .string("chariot_level", StringOptions),
+
+    pet: new Parser().skip(2)
+     .string("command", StringOptions)
+     .string("action", StringOptions)
+     .string("companion_id", StringOptions)
+     .string("value", StringOptions)
+     .string("amount", StringOptions),
+
+    admin: new Parser().skip(2)
+     .string("command", StringOptions)
+     .string("action", StringOptions)
+     .string("target", StringOptions)
+     .string("arg1", StringOptions)
+     .string("arg2", StringOptions)
+     .string("arg3", StringOptions),
 }

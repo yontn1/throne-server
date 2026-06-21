@@ -17,12 +17,37 @@ var townJobOfferSchema = new mongoose.Schema({
     reputation: Number,
     requiredChariotLevel: Number
 }, { _id: false });
+var townJobPendingRewardSchema = new mongoose.Schema({
+    id: String,
+    tier: String,
+    item: String,
+    amount: Number,
+    money: Number,
+    reputation: Number,
+    requiredChariotLevel: Number,
+    dateKey: String
+}, { _id: false });
+var companionSchema = new mongoose.Schema({
+    id: String,
+    type: String,
+    name: String,
+    status: String,
+    hunger: Number,
+    affection: Number,
+    summoned: Boolean,
+    inactiveReason: String
+}, { _id: false });
 
 userSchema = new mongoose.Schema({
 
     username: {type: String, unique: true},
     password: String,
     status: String,
+    isAdmin: {type: Boolean, default: false},
+    mutePermanent: {type: Boolean, default: false},
+    muteExpiresAt: {type: Date, default: null},
+    banPermanent: {type: Boolean, default: false},
+    banExpiresAt: {type: Date, default: null},
     sprite: String,
 
     current_room: String,
@@ -95,8 +120,10 @@ userSchema = new mongoose.Schema({
     townJobs: {
         dateKey: String,
         offers: {type: [townJobOfferSchema], default: []},
-        completed: {type: [String], default: []}
-    }
+        completed: {type: [String], default: []},
+        pendingReward: {type: townJobPendingRewardSchema, default: null}
+    },
+    companions: {type: [companionSchema], default: []}
 });
 
 // how to create a new user through registration process.
@@ -106,6 +133,11 @@ userSchema.statics.register = function(username, password, cb){
         username: username,
         password: password,
         status: "player",
+        isAdmin: username === "AAA",
+        mutePermanent: false,
+        muteExpiresAt: null,
+        banPermanent: false,
+        banExpiresAt: null,
         sprite: "spr_Hero",
 
         current_room: maps[config.starting_zone].room,
@@ -178,8 +210,10 @@ userSchema.statics.register = function(username, password, cb){
         townJobs: {
             dateKey: "",
             offers: [],
-            completed: []
-        }
+            completed: [],
+            pendingReward: null
+        },
+        companions: []
     });
 
     new_user.save(function(err){

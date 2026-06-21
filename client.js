@@ -101,6 +101,9 @@ module.exports = function() {
             if (packet && typeof packet.sendFishSpotSnapshot === "function") {
                 packet.sendFishSpotSnapshot(client, selected_room);
             }
+            if (packet && typeof packet.sendHouseDirty === "function") {
+                packet.sendHouseDirty(selected_room);
+            }
             // console.log(`Added ${client.user.username} to room: ${selected_room}`);
         } else {
             // console.log(`Room ${selected_room} does not exist or has no clients.`);
@@ -132,11 +135,14 @@ module.exports = function() {
             if (Buffer.isBuffer(message)) {
                 // Handle binary data (from GML)
 
-                // Read the packet size (first byte)
-                const packetSize = message.readUInt8(0);
+                if (message.length < 2) return;
+
+                // Read the packet size (first two bytes, includes the length prefix)
+                const packetSize = message.readUInt16LE(0);
+                if (packetSize < 2 || packetSize > message.length) return;
 
                 // Extract the actual data based on the packet size
-                const dataBuffer = message.slice(0, packetSize + 1);
+                const dataBuffer = message.slice(0, packetSize);
 
                 // Parse the data buffer (you will need to adjust the parsing logic based on the actual format)
                 packet.parse(client, dataBuffer);
@@ -162,6 +168,9 @@ module.exports = function() {
         client.user.positionTimeout = null;
     }
         // console.log("Client closed");
+        if (client.user && packet && typeof packet.cancelTradeForUser === "function") {
+            packet.cancelTradeForUser(client.user.username, "Player logged out");
+        }
         if (client.user && client.user.current_room && maps[client.user.current_room]) {
             const disconnectMessage = packet.build(["LEAVE", client.user.username]);
             maps[client.user.current_room].clients.forEach(function(otherClient) {
