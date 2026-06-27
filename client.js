@@ -6,6 +6,7 @@ var showlogs = false;
 // Export the client module
 module.exports = function() {
     var client = this;
+    client.ended = false;
 
     // These objects will be added at runtime
     // this.socket = {}
@@ -23,9 +24,36 @@ module.exports = function() {
     this.enterroom = function (selected_room) {
         if (maps[selected_room] && maps[selected_room].clients) {
             // console.log(`Client ${client.user.username} is entering room: ${selected_room}`);
-    
+            Object.keys(maps).forEach(function(roomName) {
+                if (!maps[roomName] || !Array.isArray(maps[roomName].clients)) return;
+                maps[roomName].clients.forEach(function(otherClient) {
+                    if (
+                        otherClient !== client &&
+                        otherClient.user &&
+                        client.user &&
+                        String(otherClient.user.username || "").toLowerCase() === String(client.user.username || "").toLowerCase()
+                    ) {
+                        otherClient.end();
+                        if (otherClient.socket) {
+                            try {
+                                otherClient.socket.close();
+                            } catch (error) {}
+                        }
+                    }
+                });
+                maps[roomName].clients = _.filter(maps[roomName].clients, function(otherClient) {
+                    return !(
+                        otherClient !== client &&
+                        otherClient.user &&
+                        client.user &&
+                        String(otherClient.user.username || "").toLowerCase() === String(client.user.username || "").toLowerCase()
+                    );
+                });
+            });
+
             // Notify the new client about all existing users in the room
             maps[selected_room].clients.forEach(function (otherClient) {
+                if (!otherClient || otherClient === client || !otherClient.user || !client.user || String(otherClient.user.username || "").toLowerCase() === String(client.user.username || "").toLowerCase()) return;
                 // Validate all fields
                 const packetData = [
                     "ENTER",
@@ -49,20 +77,20 @@ module.exports = function() {
                     String(otherClient.user.farmingExperience) || 0,
                     String(otherClient.user.eye_colour || "0")
                 ];
-    
+
                 // Ensure HP is not negative
                 if (packetData[14] < 0) {
                     packetData[14] = 0;
                 }
-    
+
                 // Log packet data for debugging
                 // console.log(`Building ENTER packet for ${otherClient.user.username}:`, packetData);
-    
+
                 const enterPacket = packet.build(packetData);
                 client.socket.send(enterPacket); // Send raw binary packet
                 // console.log(`Sent ENTER packet to ${client.user.username} for existing user: ${otherClient.user.username}`);
             });
-    
+
             // Notify existing clients in the room about the new client
             const newClientPacketData = [
                 "ENTER",
@@ -86,16 +114,17 @@ module.exports = function() {
                 String(client.user.farmingExperience) || 0,
                 String(client.user.eye_colour || "0")
             ];
-    
+
             // Log new client packet data
             // console.log(`Building new client packet for ${client.user.username}:`, newClientPacketData);
-    
+
             const newClientPacket = packet.build(newClientPacketData);
             maps[selected_room].clients.forEach(function (otherClient) {
+                if (!otherClient || otherClient === client || !otherClient.user || !client.user || String(otherClient.user.username || "").toLowerCase() === String(client.user.username || "").toLowerCase()) return;
                 otherClient.socket.send(newClientPacket); // Send raw binary packet
                 // console.log(`Notified ${otherClient.user.username} about new user: ${client.user.username}`);
             });
-    
+
             // Add the new client to the room
             maps[selected_room].clients.push(client);
             if (packet && typeof packet.sendFishSpotSnapshot === "function") {
@@ -109,12 +138,12 @@ module.exports = function() {
             // console.log(`Room ${selected_room} does not exist or has no clients.`);
         }
     };
-    
+
 
     // Method to broadcast data to all clients in the same room
     this.broadcastroom = function(packetData) {
         maps[client.user.current_room].clients.forEach(function(otherClient) {
-            if (otherClient.user.username !== client.user.username) {
+            if (String(otherClient.user.username || "").toLowerCase() !== String(client.user.username || "").toLowerCase()) {
                 otherClient.socket.send(packetData);  // Broadcast binary data as-is
             }
         });
@@ -154,7 +183,7 @@ module.exports = function() {
         } catch (e) {
             // console.error("Error parsing message", e);
         }
-    };  
+    };
 
     // Error handling method
     this.error = function(err) {
@@ -163,6 +192,8 @@ module.exports = function() {
 
     // Method to handle client disconnection
     this.end = function() {
+        if (client.ended) return;
+        client.ended = true;
         if (client.user && client.user.positionTimeout) {
         clearTimeout(client.user.positionTimeout);
         client.user.positionTimeout = null;
@@ -174,14 +205,14 @@ module.exports = function() {
         if (client.user && client.user.current_room && maps[client.user.current_room]) {
             const disconnectMessage = packet.build(["LEAVE", client.user.username]);
             maps[client.user.current_room].clients.forEach(function(otherClient) {
-                if (otherClient.user.username !== client.user.username) {
+                if (String(otherClient.user.username || "").toLowerCase() !== String(client.user.username || "").toLowerCase()) {
                     otherClient.socket.send(disconnectMessage);  // Send raw binary packet
                 }
             });
 
             // Remove the client from the room's client list
             maps[client.user.current_room].clients = _.filter(maps[client.user.current_room].clients, function(otherClient) {
-                return otherClient.user.username !== client.user.username;
+                return String(otherClient.user.username || "").toLowerCase() !== String(client.user.username || "").toLowerCase();
             });
         }
     };

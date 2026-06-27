@@ -34,6 +34,7 @@ var companionSchema = new mongoose.Schema({
     status: String,
     hunger: Number,
     affection: Number,
+    skinIndex: Number,
     summoned: Boolean,
     inactiveReason: String
 }, { _id: false });

@@ -27,6 +27,7 @@ const OBJ_HORSE = "19";
 const OBJ_DOG = "20";
 const PET_FOOD_RESTORE = 25;
 const PET_REVIVE_FOOD_COST = 5;
+const PET_HORSE_SKIN_COUNT = 8;
 const PET_HORSE_FOODS = new Set(["11123", "11131", "11169"]); // wheat, corn, carrot
 const PET_DOG_FOODS = new Set([
     "11126", "11127", "11139", "11140", "11148", "11149",
@@ -1064,14 +1065,33 @@ function companionIdFor(user, type) {
     return `pet_${String(user.username || "player")}_${type}`;
 }
 
+function validHorseSkinIndex(value) {
+    const parsed = Math.floor(Number(value));
+    return Number.isFinite(parsed) && parsed >= 0 && parsed < PET_HORSE_SKIN_COUNT;
+}
+
+function randomHorseSkinIndex() {
+    return Math.floor(Math.random() * PET_HORSE_SKIN_COUNT);
+}
+
 function normalizeCompanion(userCompanion, user) {
     const type = normalizePetType(userCompanion && userCompanion.type);
     if (!type) return null;
     const statusRaw = String(userCompanion.status || "home");
     const status = statusRaw === "summoned" || statusRaw === "inactive" ? statusRaw : "home";
-    const hunger = clampInt(userCompanion.hunger, 0, 100);
+    if (userCompanion.hunger == null) user._companionDataDirty = true;
+    const hunger = clampInt(userCompanion.hunger == null ? 100 : userCompanion.hunger, 0, 100);
     const affectionDefault = type === "dog" ? 100 : 0;
     const affection = clampInt(userCompanion.affection == null ? affectionDefault : userCompanion.affection, 0, 100);
+    var skinIndex = -1;
+    if (type === "horse") {
+        if (validHorseSkinIndex(userCompanion.skinIndex)) {
+            skinIndex = Math.floor(Number(userCompanion.skinIndex));
+        } else {
+            skinIndex = randomHorseSkinIndex();
+            user._companionDataDirty = true;
+        }
+    }
     return {
         id: String(userCompanion.id || companionIdFor(user, type)),
         type,
@@ -1079,12 +1099,14 @@ function normalizeCompanion(userCompanion, user) {
         status,
         hunger,
         affection,
+        skinIndex,
         summoned: status === "summoned",
         inactiveReason: status === "inactive" ? String(userCompanion.inactiveReason || "hunger") : ""
     };
 }
 
 function normalizeCompanions(user) {
+    user._companionDataDirty = false;
     const source = Array.isArray(user.companions) ? user.companions : [];
     const byType = {};
     source.forEach(entry => {
@@ -1127,10 +1149,17 @@ function sendPetList(c) {
             entry.status,
             String(entry.hunger),
             String(entry.affection),
-            entry.inactiveReason || ""
+            entry.inactiveReason || "",
+            String(entry.skinIndex)
         ]);
     });
     sendPetPacket(c, ["END", "0", "0", "0"]);
+    if (c.user._companionDataDirty) {
+        c.user._companionDataDirty = false;
+        c.user.save(function(err) {
+            if (err) c.user._companionDataDirty = true;
+        });
+    }
 }
 
 function saveUserAndSendPets(c, message) {
@@ -1154,7 +1183,8 @@ function broadcastPetState(c, companion, action, x, y) {
         companion.id,
         companion.type,
         String(companion.hunger),
-        String(companion.affection)
+        String(companion.affection),
+        String(companion.skinIndex)
     ].join("|");
     broadcastRoomIncluding(c.user.current_room, packet.build([
         "NPC",
@@ -1195,6 +1225,7 @@ function claimCompanion(c, type) {
         status: "home",
         hunger: 100,
         affection: type === "dog" ? 100 : 0,
+        skinIndex: type === "horse" ? randomHorseSkinIndex() : -1,
         summoned: false,
         inactiveReason: ""
     });
@@ -1283,6 +1314,58 @@ function sendHomeCompanion(c, companion) {
     });
 }
 
+function autoHomeCompanion(c, companionId, ownerName) {
+    if (!c || !c.user || String(c.user.username || "") !== ADMIN_BOOTSTRAP_USERNAME) {
+        sendPetError(c, "Automatic companion dismissal requires the room master.");
+        return;
+    }
+
+    const ownerClient = findOnlineClientByUsername(ownerName);
+    if (!ownerClient || !ownerClient.user) {
+        sendPetError(c, "Companion owner is not online.");
+        return;
+    }
+    if (String(ownerClient.user.current_room || "") !== String(c.user.current_room || "")) {
+        sendPetError(c, "Companion owner is not in this room.");
+        return;
+    }
+
+    const companion = findCompanion(ownerClient.user, companionId);
+    if (!companion || companion.type !== "horse" || companion.status !== "summoned") {
+        sendPetError(c, "Summoned companion horse not found.");
+        return;
+    }
+
+    const previousStatus = companion.status;
+    const previousSummoned = companion.summoned;
+    const previousInactiveReason = companion.inactiveReason;
+    companion.status = "home";
+    companion.summoned = false;
+    companion.inactiveReason = "";
+    if (typeof ownerClient.user.markModified === "function") ownerClient.user.markModified("companions");
+
+    ownerClient.user.save(function(err) {
+        if (err) {
+            companion.status = previousStatus;
+            companion.summoned = previousSummoned;
+            companion.inactiveReason = previousInactiveReason;
+            if (typeof ownerClient.user.markModified === "function") ownerClient.user.markModified("companions");
+            sendPetError(c, "Could not send companion home.");
+            return;
+        }
+
+        broadcastPetState(
+            ownerClient,
+            companion,
+            "petDespawn",
+            ownerClient.user.pos_x || 1,
+            ownerClient.user.pos_y || 1
+        );
+        sendPetOk(ownerClient, "Your horse could not reach you and went home.");
+        sendPetList(ownerClient);
+    });
+}
+
 function feedCompanion(c, companion, item) {
     if (!companion || companion.status !== "summoned") {
         sendPetError(c, "Summon the companion first");
@@ -1294,21 +1377,41 @@ function feedCompanion(c, companion, item) {
         sendPetError(c, "That food does not help this companion");
         return;
     }
-    const inventory = readInventory(c.user);
-    if (removeFromInventory(inventory, food, 1) < 1) {
-        sendPetError(c, "You do not have that food");
+    if (clampInt(companion.hunger, 0, 100) >= 100) {
+        sendPetError(c, "This companion is already full.");
         return;
     }
-    companion.hunger = Math.min(100, clampInt(companion.hunger, 0, 100) + PET_FOOD_RESTORE);
+    if (c.petFeedPending) {
+        sendPetError(c, "Feeding is already in progress.");
+        return;
+    }
+    const equipped = decodeInventoryValue(c.user.weapon);
+    if (equipped.item !== food || equipped.amount <= 0) {
+        sendPetError(c, "Hold suitable food to feed this companion.");
+        return;
+    }
+
+    const previousWeapon = String(c.user.weapon || "0");
+    const previousHunger = companion.hunger;
+    const nextWeapon = packInventoryValue(equipped.item, equipped.amount - 1);
+    const nextHunger = Math.min(100, clampInt(companion.hunger, 0, 100) + PET_FOOD_RESTORE);
+    c.petFeedPending = true;
+    c.user.weapon = nextWeapon;
+    companion.hunger = nextHunger;
     if (typeof c.user.markModified === "function") c.user.markModified("companions");
-    writeInventory(c.user, inventory);
     c.user.save(function(err) {
+        c.petFeedPending = false;
         if (err) {
+            c.user.weapon = previousWeapon;
+            companion.hunger = previousHunger;
             sendPetError(c, "Could not feed companion");
             return;
         }
-        sendInventorySnapshot(c, inventory);
+        const weaponPacket = packet.build(["ACCEPT", c.user.username, "weapon", String(c.user.weapon || "0")]);
+        c.socket.send(weaponPacket);
+        c.broadcastroom(weaponPacket);
         sendPetOk(c, "Companion fed.");
+        broadcastPetState(c, companion, "petUpdate", c.user.pos_x || 1, c.user.pos_y || 1);
         sendPetList(c);
     });
 }
@@ -1373,6 +1476,14 @@ function handlePetPacket(c, datapacket) {
             return;
         }
         buyWhistle(c);
+        return;
+    }
+    if (action === "FEED" && c.petFeedPending) {
+        sendPetError(c, "Feeding is already in progress.");
+        return;
+    }
+    if (action === "AUTO_HOME") {
+        autoHomeCompanion(c, id, data.value);
         return;
     }
 
@@ -2387,6 +2498,14 @@ module.exports = packet = global.packet = {
         }
 
         switch (header.command.toUpperCase()) {
+            case "LOGOUT":
+                c.end();
+                if (c.socket) {
+                    try {
+                        c.socket.close();
+                    } catch (error) {}
+                }
+                break;
             case "LOGIN":
                 var data = PacketModels.login.parse(datapacket);
                 User.login(data.username, data.password, function (result, user) {
