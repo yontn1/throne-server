@@ -19,6 +19,7 @@ const MAX_PACKET_SIZE = 65535;
 const BANK_DEBUG = false;
 const TOWN_JOB_COUNTS = { low: 3, mid: 2, high: 1 };
 const WHISTLE_ITEM = "11179";
+const CHARCOAL_ITEM = "11181";
 const WHISTLE_PRICE = 100;
 const PET_HORSE_REPUTATION = 25;
 const PET_DOG_REPUTATION = 50;
@@ -33,6 +34,38 @@ const PET_DOG_FOODS = new Set([
     "11126", "11127", "11139", "11140", "11148", "11149",
     "11171", "11172", "11174", "11175"
 ]);
+const SERVANT_REPUTATION = 250;
+const SERVANT_CHEST_SLOT_LIMIT = 16;
+const SERVANT_DAILY_XP_CAP = 100;
+const SERVANT_XP_RATE = 0.10;
+const SERVANT_RANGE_MAX_DISTANCE = 260;
+const SERVANT_RANGE_MIN_HALF_W = 32;
+const SERVANT_RANGE_MIN_HALF_H = 24;
+const SERVANT_RANGE_MAX_HALF_W = 140;
+const SERVANT_RANGE_MAX_HALF_H = 96;
+const SERVANT_RANGE_DEFAULT_HALF_W = 92;
+const SERVANT_RANGE_DEFAULT_HALF_H = 46;
+const SERVANT_CHEST_MAX_DISTANCE = 220;
+const SERVANT_SEED_CONFIG = {
+    "11124": { cropType: "5", cropItem: "11123", cropXp: 4 },   // wheat seed -> wheat
+    "11130": { cropType: "11", cropItem: "11131", cropXp: 20 }, // corn seed -> corn
+    "11170": { cropType: "29", cropItem: "11169", cropXp: 50 }  // carrot seed -> carrot
+};
+const SERVANT_CROP_CONFIG = {
+    "5": { cropItem: "11123", cropXp: 4 },
+    "11": { cropItem: "11131", cropXp: 20 },
+    "29": { cropItem: "11169", cropXp: 50 }
+};
+const FURNITURE_CHEST_SLOT_LIMIT = 16;
+const FURNITURE_ITEM_IDS = {
+    chair: "11189",
+    table: "11190",
+    furnace: "11191",
+    anvil: "11192",
+    bed: "11193",
+    chest: "11194"
+};
+const FURNITURE_TYPES = new Set(Object.keys(FURNITURE_ITEM_IDS));
 const NON_STACKABLE_ITEMS = new Set([
     "11112", // Sword
     "11160", // Long sword
@@ -56,7 +89,13 @@ const NON_STACKABLE_ITEMS = new Set([
     "11166", // Adamant platebody
     "11167", // Adamant platelegs
     "11168", // Adamant shield
-    "11179"  // Whistle
+    "11179", // Whistle
+    "11189", // Chair
+    "11190", // Table
+    "11191", // Furnace
+    "11192", // Anvil
+    "11193", // Bed
+    "11194"  // Chest
 ]);
 const ADMIN_BOOTSTRAP_USERNAME = "AAA";
 const HOUSE_MASTER_USERNAME = ADMIN_BOOTSTRAP_USERNAME;
@@ -71,10 +110,13 @@ const ADMIN_SKILL_FIELDS = new Set([
     "miningExperience",
     "choppingExperience",
     "fishingExperience",
+    "firemakingExperience",
     "buildingExperience",
     "smithingExperience"
 ]);
 const sessionFishSpotsByRoom = {};
+const sessionFurnacesByRoom = {};
+const FURNACE_FUEL_MS = 15000;
 
 function clampInt(value, min, max) {
     const parsed = Math.floor(Number(value));
@@ -876,7 +918,59 @@ function broadcastRoomIncluding(room, packetData) {
         }
     });
 }
+function getSessionFurnaces(room) {
+    const roomKey = String(room || "");
+    if (!sessionFurnacesByRoom[roomKey]) sessionFurnacesByRoom[roomKey] = {};
+    return sessionFurnacesByRoom[roomKey];
+}
 
+function furnaceRemainingMs(entry) {
+    return Math.max(0, Math.ceil((Number(entry && entry.expiresAt) || 0) - Date.now()));
+}
+
+function pruneSessionFurnaces(room) {
+    const furnaces = getSessionFurnaces(room);
+    Object.keys(furnaces).forEach(function(key) {
+        if (furnaceRemainingMs(furnaces[key]) <= 0) delete furnaces[key];
+    });
+}
+
+function sendFurnaceState(c, entry) {
+    if (!c || !c.socket || !entry) return;
+    c.socket.send(packet.build(["FURNACE", "STATE", entry.name, String(entry.x || 0), String(entry.y || 0), String(furnaceRemainingMs(entry))]));
+}
+
+function handleFurnacePacket(c, datapacket) {
+    if (!c || !c.user) return;
+    const rawFields = readPacketStrings(datapacket);
+    const action = String(rawFields[1] || "").toUpperCase();
+    const name = String(rawFields[2] || "");
+    const x = clampInt(rawFields[3], -1000000, 1000000);
+    const y = clampInt(rawFields[4], -1000000, 1000000);
+    const room = String(c.user.current_room || "");
+
+    if (!name) return;
+
+    pruneSessionFurnaces(room);
+    const furnaces = getSessionFurnaces(room);
+
+    if (action === "REQUEST") {
+        if (furnaces[name]) sendFurnaceState(c, furnaces[name]);
+        return;
+    }
+
+    if (action !== "ADD_FUEL") return;
+
+    const now = Date.now();
+    const entry = furnaces[name] || { name, x, y, expiresAt: 0 };
+    entry.name = name;
+    entry.x = x;
+    entry.y = y;
+    entry.expiresAt = Math.max(Number(entry.expiresAt) || 0, now) + FURNACE_FUEL_MS;
+    furnaces[name] = entry;
+
+    broadcastRoomIncluding(room, packet.build(["FURNACE", "STATE", entry.name, String(entry.x), String(entry.y), String(furnaceRemainingMs(entry))]));
+}
 function parseHouseConfigPlaceId(configValue) {
     const configText = String(configValue || "");
     const separator = configText.indexOf("|");
@@ -888,6 +982,14 @@ function sendHouseError(c, message) {
     if (c && c.socket) c.socket.send(packet.build(["HOUSE", "ERROR", String(message || "House action failed")]));
 }
 
+function sendHouseOk(c, message) {
+    if (c && c.socket) c.socket.send(packet.build(["HOUSE", "OK", String(message || "Done")]));
+}
+
+function houseLockedValue(house) {
+    return house && house.locked ? "1" : "0";
+}
+
 function sendHouseDirty(room) {
     const master = findOnlineClientByUsername(HOUSE_MASTER_USERNAME);
     if (master && master.socket) {
@@ -895,6 +997,1073 @@ function sendHouseDirty(room) {
     }
 }
 
+function servantDateKey(date = new Date()) {
+    return date.toISOString().slice(0, 10);
+}
+
+function servantDefaultRange(house) {
+    return {
+        cx: Math.round((Number(house && house.x) || 0) + 100),
+        cy: Math.round((Number(house && house.y) || 0) + 70),
+        halfW: SERVANT_RANGE_DEFAULT_HALF_W,
+        halfH: SERVANT_RANGE_DEFAULT_HALF_H
+    };
+}
+
+function normalizeServantChest(servant) {
+    if (!servant || typeof servant !== "object") return [];
+    const source = Array.isArray(servant.chest) ? servant.chest : [];
+    const slots = [];
+    for (let i = 0; i < SERVANT_CHEST_SLOT_LIMIT; i++) {
+        const slot = source[i] || {};
+        const item = String(slot.item || "0");
+        const amount = clampInt(slot.amount || 0, 0, BANK_STACK_LIMIT);
+        slots.push(item !== "0" && amount > 0 ? { item, amount } : { item: "0", amount: 0 });
+    }
+    servant.chest = slots;
+    return slots;
+}
+
+function normalizeServant(house) {
+    if (!house.servant || typeof house.servant !== "object") house.servant = {};
+    const servant = house.servant;
+    const defaults = servantDefaultRange(house);
+    servant.unlocked = !!servant.unlocked;
+    servant.collectEnabled = servant.collectEnabled !== false;
+    servant.cx = clampInt(servant.cx == null ? defaults.cx : servant.cx, 0, 65535);
+    servant.cy = clampInt(servant.cy == null ? defaults.cy : servant.cy, 0, 65535);
+    servant.halfW = clampInt(servant.halfW == null ? defaults.halfW : servant.halfW, SERVANT_RANGE_MIN_HALF_W, SERVANT_RANGE_MAX_HALF_W);
+    servant.halfH = clampInt(servant.halfH == null ? defaults.halfH : servant.halfH, SERVANT_RANGE_MIN_HALF_H, SERVANT_RANGE_MAX_HALF_H);
+    const hasChestCoords = servant.chestX != null && servant.chestY != null;
+    servant.chestPlaced = servant.chestPlaced === true || (servant.chestPlaced == null && hasChestCoords);
+    servant.chestX = servant.chestPlaced ? clampInt(servant.chestX, 0, 65535) : 0;
+    servant.chestY = servant.chestPlaced ? clampInt(servant.chestY, 0, 65535) : 0;
+    const today = servantDateKey();
+    if (String(servant.xpDateKey || "") !== today) {
+        servant.xpDateKey = today;
+        servant.xpToday = 0;
+    } else {
+        servant.xpToday = clampInt(servant.xpToday || 0, 0, SERVANT_DAILY_XP_CAP);
+    }
+    normalizeServantChest(servant);
+    if (typeof house.markModified === "function") house.markModified("servant");
+    return servant;
+}
+
+function ownsHouse(c, house) {
+    return !!(house && c && c.user && house.owner && c.user._id && String(house.owner) === String(c.user._id));
+}
+
+function canMasterSyncServants(c) {
+    return !!(c && c.user && (String(c.user.username || "") === HOUSE_MASTER_USERNAME || isAdminUser(c.user)));
+}
+
+function sendServantPacket(c, params) {
+    if (c && c.socket) c.socket.send(packet.build(["SERVANT"].concat(params.map(value => String(value)))));
+}
+
+function sendServantError(c, message) {
+    sendServantPacket(c, ["ERROR", String(message || "Servant action failed")]);
+}
+
+function sendServantOk(c, message) {
+    sendServantPacket(c, ["OK", String(message || "Done")]);
+}
+
+function servantRangePacketParts(house) {
+    const servant = normalizeServant(house);
+    return [
+        String(house.placeId || ""),
+        String(house.ownerUsername || ""),
+        servant.collectEnabled ? "1" : "0",
+        String(servant.cx),
+        String(servant.cy),
+        String(servant.halfW),
+        String(servant.halfH),
+        String(servant.xpToday || 0),
+        String(SERVANT_DAILY_XP_CAP),
+        servant.chestPlaced ? "1" : "0",
+        String(servant.chestX || 0),
+        String(servant.chestY || 0)
+    ];
+}
+
+function sendServantSnapshot(c, house, includeChest = true) {
+    if (!house || !house.servant || !house.servant.unlocked) return;
+    const servant = normalizeServant(house);
+    sendServantPacket(c, ["START"].concat(servantRangePacketParts(house)));
+    if (includeChest) {
+        const chest = normalizeServantChest(servant);
+        for (let i = 0; i < SERVANT_CHEST_SLOT_LIMIT; i++) {
+            sendServantPacket(c, ["SLOT", String(house.placeId || ""), String(i + 1), chest[i].item, String(chest[i].amount)]);
+        }
+    }
+    sendServantPacket(c, ["END", String(house.placeId || "")]);
+}
+
+function broadcastServantSnapshot(house, includeChest = true) {
+    if (!house || !house.servant || !house.servant.unlocked) return;
+    const room = String(house.room || "");
+    const servant = normalizeServant(house);
+    broadcastRoomIncluding(room, packet.build(["SERVANT", "START"].concat(servantRangePacketParts(house))));
+    if (includeChest) {
+        const chest = normalizeServantChest(servant);
+        for (let i = 0; i < SERVANT_CHEST_SLOT_LIMIT; i++) {
+            broadcastRoomIncluding(room, packet.build(["SERVANT", "SLOT", String(house.placeId || ""), String(i + 1), chest[i].item, String(chest[i].amount)]));
+        }
+    }
+    broadcastRoomIncluding(room, packet.build(["SERVANT", "END", String(house.placeId || "")]));
+}
+
+function broadcastServantDestroy(room, placeId) {
+    broadcastRoomIncluding(String(room || ""), packet.build(["SERVANT", "DESTROY", String(placeId || "")]));
+}
+
+function servantPointInRange(servant, x, y) {
+    const halfW = Math.max(1, Number(servant.halfW) || SERVANT_RANGE_DEFAULT_HALF_W);
+    const halfH = Math.max(1, Number(servant.halfH) || SERVANT_RANGE_DEFAULT_HALF_H);
+    const dx = Math.abs((Number(x) || 0) - (Number(servant.cx) || 0)) / halfW;
+    const dy = Math.abs((Number(y) || 0) - (Number(servant.cy) || 0)) / halfH;
+    return dx + dy <= 1.08;
+}
+
+function servantRangeFromPacket(house, cxRaw, cyRaw, halfWRaw, halfHRaw) {
+    const halfW = clampInt(halfWRaw, SERVANT_RANGE_MIN_HALF_W, SERVANT_RANGE_MAX_HALF_W);
+    const halfH = clampInt(halfHRaw, SERVANT_RANGE_MIN_HALF_H, SERVANT_RANGE_MAX_HALF_H);
+    const cx = clampInt(cxRaw, 0, 65535);
+    const cy = clampInt(cyRaw, 0, 65535);
+    const base = servantDefaultRange(house);
+    const dist = Math.hypot(cx - base.cx, cy - base.cy);
+    return { ok: dist <= SERVANT_RANGE_MAX_DISTANCE, cx, cy, halfW, halfH };
+}
+
+function servantChestPlacementFromPacket(house, xRaw, yRaw) {
+    const x = clampInt(xRaw, 0, 65535);
+    const y = clampInt(yRaw, 0, 65535);
+    const houseX = Number(house && house.x) || 0;
+    const houseY = Number(house && house.y) || 0;
+    const dist = Math.hypot(x - houseX, y - houseY);
+    return { ok: dist <= SERVANT_CHEST_MAX_DISTANCE, x, y };
+}
+
+function servantRequiresPlacedChest(servant) {
+    return !!(servant && servant.chestPlaced);
+}
+
+function cloneServantChest(servant) {
+    return normalizeServantChest(servant).map(slot => ({ item: String(slot.item), amount: clampInt(slot.amount, 0, BANK_STACK_LIMIT) }));
+}
+
+function servantChestAdd(chest, item, amount) {
+    const itemId = String(item || "0");
+    const stackable = isStackableItem(itemId);
+    let remaining = clampInt(amount, 0, BANK_STACK_LIMIT);
+    let added = 0;
+    if (itemId === "0" || remaining <= 0) return 0;
+
+    if (stackable) {
+        for (const slot of chest) {
+            if (remaining <= 0) break;
+            if (slot.item !== itemId || slot.amount <= 0) continue;
+            const add = Math.min(BANK_STACK_LIMIT - clampInt(slot.amount, 0, BANK_STACK_LIMIT), remaining);
+            if (add <= 0) continue;
+            slot.amount += add;
+            added += add;
+            remaining -= add;
+        }
+    }
+
+    for (const slot of chest) {
+        if (remaining <= 0) break;
+        if (slot.amount > 0 && slot.item !== "0") continue;
+        const add = stackable ? Math.min(BANK_STACK_LIMIT, remaining) : 1;
+        slot.item = itemId;
+        slot.amount = add;
+        added += add;
+        remaining -= add;
+    }
+
+    return added;
+}
+
+function servantChestRemove(chest, item, amount) {
+    const itemId = String(item || "0");
+    let remaining = clampInt(amount, 0, BANK_STACK_LIMIT);
+    let removed = 0;
+    if (itemId === "0" || remaining <= 0) return 0;
+
+    for (const slot of chest) {
+        if (remaining <= 0) break;
+        if (slot.item !== itemId || slot.amount <= 0) continue;
+        const take = Math.min(slot.amount, remaining);
+        slot.amount -= take;
+        removed += take;
+        remaining -= take;
+        if (slot.amount <= 0) {
+            slot.item = "0";
+            slot.amount = 0;
+        }
+    }
+
+    return removed;
+}
+
+function saveHouseQueued(house, afterSave, onError) {
+    house.save(function(err) {
+        if (err) {
+            if (typeof onError === "function") onError(err);
+            return;
+        }
+        if (typeof afterSave === "function") afterSave();
+    });
+}
+
+function applyServantXpToOwner(house, xpGrant) {
+    const grant = clampInt(xpGrant, 0, SERVANT_DAILY_XP_CAP);
+    if (grant <= 0 || typeof User === "undefined" || !house || !house.owner) return;
+
+    User.findById(house.owner, function(err, ownerUser) {
+        if (err || !ownerUser) return;
+        const currentXp = clampInt(ownerUser.farmingExperience || 0, 0, BANK_STACK_LIMIT);
+        ownerUser.farmingExperience = String(Math.min(BANK_STACK_LIMIT, currentXp + grant));
+        ownerUser.save(function() {
+            const ownerClient = findOnlineClientByUsername(ownerUser.username);
+            if (ownerClient && ownerClient.socket) {
+                if (ownerClient.user) ownerClient.user.farmingExperience = ownerUser.farmingExperience;
+                ownerClient.socket.send(packet.build(["ACCEPT", ownerUser.username, "farmingExperience", ownerUser.farmingExperience]));
+                ownerClient.socket.send(packet.build(["SERVANT", "XP", String(house.placeId || ""), String(grant), String(house.servant && house.servant.xpToday || 0), String(SERVANT_DAILY_XP_CAP)]));
+            }
+        });
+    });
+}
+
+function handleServantPacket(c, datapacket) {
+    if (!c.user) return;
+    if (typeof House === "undefined") {
+        sendServantError(c, "House model is not loaded");
+        return;
+    }
+
+    const rawFields = readPacketStrings(datapacket);
+    const action = String(rawFields[1] || "").toUpperCase();
+    const placeId = String(rawFields[2] || "");
+    const room = String(c.user.current_room || "");
+
+    if (action === "SYNC") {
+        if (!canMasterSyncServants(c)) {
+            sendServantError(c, "Servant sync permission required");
+            return;
+        }
+        const syncPacket = packet.build([
+            "SERVANT", "SYNC",
+            rawFields[2] || "0",
+            rawFields[3] || "",
+            rawFields[4] || "1",
+            rawFields[5] || "0",
+            rawFields[6] || "0",
+            rawFields[7] || String(SERVANT_RANGE_DEFAULT_HALF_W),
+            rawFields[8] || String(SERVANT_RANGE_DEFAULT_HALF_H),
+            rawFields[9] || ""
+        ]);
+        broadcastRoomIncluding(room, syncPacket);
+        return;
+    }
+
+    if (action === "MOVE") {
+        if (!canMasterSyncServants(c) || !placeId || placeId === "0") return;
+        const moveX = clampInt(rawFields[3] || 0, 0, 65535);
+        const moveY = clampInt(rawFields[4] || 0, 0, 65535);
+        const moveTargetX = clampInt(rawFields[5] || moveX, 0, 65535);
+        const moveTargetY = clampInt(rawFields[6] || moveY, 0, 65535);
+        broadcastRoomIncluding(room, packet.build(["SERVANT", "MOVE", placeId, String(moveX), String(moveY), String(moveTargetX), String(moveTargetY)]));
+        return;
+    }
+
+    if (!placeId || placeId === "0") {
+        sendServantError(c, "Missing house id");
+        return;
+    }
+
+    House.findOne({ placeId: placeId }, function(err, house) {
+        if (err || !house) {
+            sendServantError(c, "House not found");
+            return;
+        }
+
+        const isOwner = ownsHouse(c, house);
+        const isMaster = canMasterSyncServants(c);
+        const servant = normalizeServant(house);
+
+        if (action === "CLAIM") {
+            if (!isOwner && !isAdminUser(c.user)) {
+                sendServantError(c, "You do not own that house");
+                return;
+            }
+            if (normalizeTownReputation(c.user) < SERVANT_REPUTATION && !isAdminUser(c.user)) {
+                sendServantError(c, `You need ${SERVANT_REPUTATION} town reputation to hire a servant`);
+                return;
+            }
+            if (servant.unlocked) {
+                sendServantError(c, "This house already has a servant");
+                return;
+            }
+            servant.unlocked = true;
+            servant.collectEnabled = true;
+            const defaults = servantDefaultRange(house);
+            servant.cx = defaults.cx;
+            servant.cy = defaults.cy;
+            servant.halfW = defaults.halfW;
+            servant.halfH = defaults.halfH;
+            servant.xpDateKey = servantDateKey();
+            servant.xpToday = 0;
+            servant.chestPlaced = false;
+            servant.chestX = 0;
+            servant.chestY = 0;
+            servant.chest = Array.from({ length: SERVANT_CHEST_SLOT_LIMIT }, () => ({ item: "0", amount: 0 }));
+            if (typeof house.markModified === "function") house.markModified("servant");
+            saveHouseQueued(house, function() {
+                broadcastServantSnapshot(house, true);
+                sendServantOk(c, "Servant hired. Place their chest inside your house before they can work.");
+            }, function() { sendServantError(c, "Could not save servant"); });
+            return;
+        }
+
+        if (!servant.unlocked) {
+            sendServantError(c, "This house has no servant");
+            return;
+        }
+
+        if (action === "OPEN") {
+            if (!isOwner && !isAdminUser(c.user) && !isMaster) {
+                sendServantError(c, "You do not own that servant chest");
+                return;
+            }
+            if (!servantRequiresPlacedChest(servant) && !isMaster) {
+                sendServantError(c, "Place the servant chest inside your house first");
+                return;
+            }
+            sendServantSnapshot(c, house, true);
+            return;
+        }
+
+        if (action === "SET_COLLECT") {
+            if (!isOwner && !isAdminUser(c.user)) {
+                sendServantError(c, "You do not own that servant");
+                return;
+            }
+            servant.collectEnabled = String(rawFields[3] || "0") === "1";
+            if (typeof house.markModified === "function") house.markModified("servant");
+            saveHouseQueued(house, function() {
+                broadcastServantSnapshot(house, false);
+                sendServantOk(c, servant.collectEnabled ? "Servant will collect grown crops." : "Servant will only plant crops.");
+            }, function() { sendServantError(c, "Could not save servant setting"); });
+            return;
+        }
+
+        if (action === "SET_RANGE") {
+            if (!isOwner && !isAdminUser(c.user)) {
+                sendServantError(c, "You do not own that servant");
+                return;
+            }
+            const range = servantRangeFromPacket(house, rawFields[3], rawFields[4], rawFields[5], rawFields[6]);
+            if (!range.ok) {
+                sendServantError(c, "That work range is too far from your house");
+                return;
+            }
+            servant.cx = range.cx;
+            servant.cy = range.cy;
+            servant.halfW = range.halfW;
+            servant.halfH = range.halfH;
+            if (typeof house.markModified === "function") house.markModified("servant");
+            saveHouseQueued(house, function() {
+                broadcastServantSnapshot(house, false);
+                sendServantOk(c, "Servant work range saved.");
+            }, function() { sendServantError(c, "Could not save servant range"); });
+            return;
+        }
+
+        if (action === "PLACE_CHEST") {
+            if (!isOwner && !isAdminUser(c.user)) {
+                sendServantError(c, "You do not own that servant");
+                return;
+            }
+            const placement = servantChestPlacementFromPacket(house, rawFields[3], rawFields[4]);
+            if (!placement.ok) {
+                sendServantError(c, "Servant chest must be placed inside your house");
+                return;
+            }
+            servant.chestPlaced = true;
+            servant.chestX = placement.x;
+            servant.chestY = placement.y;
+            if (typeof house.markModified === "function") house.markModified("servant");
+            saveHouseQueued(house, function() {
+                broadcastServantSnapshot(house, true);
+                sendServantOk(c, "Servant chest placed. Add seeds to let your servant work.");
+            }, function() { sendServantError(c, "Could not save servant chest placement"); });
+            return;
+        }
+
+        if (action === "DEPOSIT") {
+            if (!isOwner && !isAdminUser(c.user)) {
+                sendServantError(c, "You do not own that servant chest");
+                return;
+            }
+            if (!servantRequiresPlacedChest(servant)) {
+                sendServantError(c, "Place the servant chest inside your house first");
+                return;
+            }
+            const item = String(rawFields[3] || "0");
+            const amount = clampInt(rawFields[4] || 0, 1, BANK_STACK_LIMIT);
+            const inventory = readInventory(c.user);
+            if (countInventoryItem(inventory, item) < amount) {
+                sendServantError(c, "You do not have enough of that item");
+                return;
+            }
+            const chest = cloneServantChest(servant);
+            const added = servantChestAdd(chest, item, amount);
+            if (added < amount) {
+                sendServantError(c, "Servant chest is full");
+                return;
+            }
+            removeFromInventory(inventory, item, amount);
+            writeInventory(c.user, inventory);
+            servant.chest = chest;
+            if (typeof house.markModified === "function") house.markModified("servant");
+            saveHouseQueued(house, function() {
+                saveUserQueued(c, function() {
+                    sendInventorySnapshot(c, inventory);
+                    broadcastServantSnapshot(house, true);
+                }, function() { sendServantError(c, "Could not save inventory"); });
+            }, function() { sendServantError(c, "Could not save servant chest"); });
+            return;
+        }
+
+        if (action === "WITHDRAW") {
+            if (!isOwner && !isAdminUser(c.user)) {
+                sendServantError(c, "You do not own that servant chest");
+                return;
+            }
+            if (!servantRequiresPlacedChest(servant)) {
+                sendServantError(c, "Place the servant chest inside your house first");
+                return;
+            }
+            const item = String(rawFields[3] || "0");
+            const amount = clampInt(rawFields[4] || 0, 1, BANK_STACK_LIMIT);
+            const chest = cloneServantChest(servant);
+            const inventory = readInventory(c.user);
+            if (inventoryCapacityForItem(inventory, item) < amount) {
+                sendServantError(c, "Your inventory is full");
+                return;
+            }
+            const removed = servantChestRemove(chest, item, amount);
+            if (removed < amount) {
+                sendServantError(c, "The servant chest does not have enough of that item");
+                return;
+            }
+            addToInventory(inventory, item, amount);
+            writeInventory(c.user, inventory);
+            servant.chest = chest;
+            if (typeof house.markModified === "function") house.markModified("servant");
+            saveHouseQueued(house, function() {
+                saveUserQueued(c, function() {
+                    sendInventorySnapshot(c, inventory);
+                    broadcastServantSnapshot(house, true);
+                }, function() { sendServantError(c, "Could not save inventory"); });
+            }, function() { sendServantError(c, "Could not save servant chest"); });
+            return;
+        }
+
+        if (action === "PLANT") {
+            if (!isMaster) {
+                sendServantError(c, "Servant work permission required");
+                return;
+            }
+            if (!servantRequiresPlacedChest(servant)) {
+                sendServantError(c, "Servant chest is not placed");
+                return;
+            }
+            const seedItem = String(rawFields[3] || "0");
+            const cropType = String(rawFields[4] || "0");
+            const cropName = String(rawFields[5] || "");
+            const cropX = clampInt(rawFields[6] || 0, 0, 65535);
+            const cropY = clampInt(rawFields[7] || 0, 0, 65535);
+            const seedConfig = SERVANT_SEED_CONFIG[seedItem];
+            if (!seedConfig || seedConfig.cropType !== cropType || !cropName) {
+                sendServantError(c, "Invalid servant seed");
+                return;
+            }
+            if (!servantPointInRange(servant, cropX, cropY)) {
+                sendServantError(c, "Servant tried to plant outside its work range");
+                return;
+            }
+            const chest = cloneServantChest(servant);
+            const removed = servantChestRemove(chest, seedItem, 1);
+            if (removed < 1) {
+                sendServantError(c, "Servant chest is out of seeds");
+                return;
+            }
+            servant.chest = chest;
+            if (typeof house.markModified === "function") house.markModified("servant");
+            saveHouseQueued(house, function() {
+                broadcastServantSnapshot(house, true);
+                broadcastRoomIncluding(String(house.room || room), packet.build(["CROP", cropType, cropName, "1", "1", "servant:" + String(house.ownerUsername || ""), String(cropX), String(cropY)]));
+            }, function() { sendServantError(c, "Could not save servant planting"); });
+            return;
+        }
+
+        if (action === "HARVEST") {
+            if (!isMaster) {
+                sendServantError(c, "Servant work permission required");
+                return;
+            }
+            if (!servantRequiresPlacedChest(servant)) {
+                sendServantError(c, "Servant chest is not placed");
+                return;
+            }
+            const cropType = String(rawFields[3] || "0");
+            const cropName = String(rawFields[4] || "");
+            const cropX = clampInt(rawFields[5] || 0, 0, 65535);
+            const cropY = clampInt(rawFields[6] || 0, 0, 65535);
+            const cropConfig = SERVANT_CROP_CONFIG[cropType];
+            if (!cropConfig || !cropName) {
+                sendServantError(c, "Invalid servant crop");
+                return;
+            }
+            if (!servantPointInRange(servant, cropX, cropY)) {
+                sendServantError(c, "Servant tried to harvest outside its work range");
+                return;
+            }
+            const chest = cloneServantChest(servant);
+            const added = servantChestAdd(chest, cropConfig.cropItem, 1);
+            if (added < 1) {
+                sendServantError(c, "Servant chest is full");
+                return;
+            }
+            const today = servantDateKey();
+            if (String(servant.xpDateKey || "") !== today) {
+                servant.xpDateKey = today;
+                servant.xpToday = 0;
+            }
+            const xpBase = Math.max(1, Math.floor(clampInt(cropConfig.cropXp, 0, BANK_STACK_LIMIT) * SERVANT_XP_RATE));
+            const xpGrant = Math.min(xpBase, Math.max(0, SERVANT_DAILY_XP_CAP - clampInt(servant.xpToday || 0, 0, SERVANT_DAILY_XP_CAP)));
+            servant.xpToday = clampInt(servant.xpToday || 0, 0, SERVANT_DAILY_XP_CAP) + xpGrant;
+            servant.chest = chest;
+            if (typeof house.markModified === "function") house.markModified("servant");
+            saveHouseQueued(house, function() {
+                broadcastServantSnapshot(house, true);
+                broadcastRoomIncluding(String(house.room || room), packet.build(["CROP", cropType, cropName, "1", "3", "servant:" + String(house.ownerUsername || ""), String(cropX), String(cropY)]));
+                applyServantXpToOwner(house, xpGrant);
+                if (xpGrant > 0) sendServantOk(c, `Servant harvested crop. Owner gained ${xpGrant} reduced Farming XP.`);
+            }, function() { sendServantError(c, "Could not save servant harvest"); });
+            return;
+        }
+
+        sendServantError(c, "Unknown servant action");
+    });
+}
+function furnitureItemForType(type) {
+    const key = String(type || "").toLowerCase();
+    return FURNITURE_ITEM_IDS[key] || "0";
+}
+
+function normalizeFurnitureChest(furniture) {
+    if (!furniture || String(furniture.type || "") !== "chest") return [];
+    const source = Array.isArray(furniture.chest) ? furniture.chest : [];
+    const slots = [];
+    for (let i = 0; i < FURNITURE_CHEST_SLOT_LIMIT; i++) {
+        const slot = source[i] || {};
+        const item = String(slot.item || "0");
+        const amount = clampInt(slot.amount || 0, 0, BANK_STACK_LIMIT);
+        slots.push(item !== "0" && amount > 0 ? { item, amount } : { item: "0", amount: 0 });
+    }
+    furniture.chest = slots;
+    return slots;
+}
+
+function normalizeHouseFurniture(house) {
+    if (!house) return [];
+    const source = Array.isArray(house.furniture) ? house.furniture : [];
+    const normalized = [];
+    source.forEach(function(entry, index) {
+        const type = String(entry && entry.type || "").toLowerCase();
+        if (!FURNITURE_TYPES.has(type)) return;
+        const id = String(entry.id || `${String(house.placeId || "house")}_${type}_${index}`);
+        const furniture = {
+            id,
+            type,
+            x: clampInt(entry.x, 0, 65535),
+            y: clampInt(entry.y, 0, 65535),
+            mirrored: entry.mirrored === true || String(entry.mirrored || "0") === "1",
+            chest: []
+        };
+        if (type === "chest") {
+            furniture.chest = normalizeFurnitureChest({ type, chest: entry.chest });
+        }
+        normalized.push(furniture);
+    });
+    house.furniture = normalized;
+    if (typeof house.markModified === "function") house.markModified("furniture");
+    return house.furniture;
+}
+
+function makeFurnitureId(house, type) {
+    const placeId = String(house && house.placeId || "house").replace(/[^a-zA-Z0-9_\-]/g, "_");
+    return `${placeId}_${String(type || "furniture")}_${Date.now().toString(36)}_${Math.floor(Math.random() * 100000).toString(36)}`;
+}
+
+function furnitureLog(c, message, details) {
+    const data = Object.assign({
+        user: c && c.user ? String(c.user.username || "") : "",
+        room: c && c.user ? String(c.user.current_room || "") : ""
+    }, details || {});
+    try {
+        console.log("[Furniture] " + message + " " + JSON.stringify(data));
+    } catch (err) {
+        console.log("[Furniture] " + message, data);
+    }
+}
+function sendFurniturePacket(c, params) {
+    if (c && c.socket) c.socket.send(packet.build(["FURNITURE"].concat(params.map(value => String(value)))));
+}
+
+function sendFurnitureError(c, message) {
+    furnitureLog(c, "SEND ERROR", { message: String(message || "Furniture action failed") });
+    sendFurniturePacket(c, ["ERROR", String(message || "Furniture action failed")]);
+}
+function sendFurnitureOk(c, message, extraParts) {
+    const params = ["OK", String(message || "Done")];
+    if (Array.isArray(extraParts)) {
+        extraParts.forEach(function(value) { params.push(String(value)); });
+    }
+    furnitureLog(c, "SEND OK", { message: String(message || "Done"), extraParts: Array.isArray(extraParts) ? extraParts : [] });
+    sendFurniturePacket(c, params);
+}
+
+function furnitureAddPacketParts(house, entry) {
+    return [
+        "ADD",
+        String(house.placeId || ""),
+        String(entry.id || ""),
+        String(entry.type || ""),
+        String(Math.round(Number(entry.x) || 0)),
+        String(Math.round(Number(entry.y) || 0)),
+        entry.mirrored ? "1" : "0"
+    ];
+}
+
+function furnitureUpdatePacketParts(house, entry) {
+    return [
+        "UPDATE",
+        String(house.placeId || ""),
+        String(entry.id || ""),
+        String(entry.type || ""),
+        String(Math.round(Number(entry.x) || 0)),
+        String(Math.round(Number(entry.y) || 0)),
+        entry.mirrored ? "1" : "0"
+    ];
+}
+function sendFurnitureAdd(c, house, entry) {
+    furnitureLog(c, "SEND ADD", {
+        placeId: String(house && house.placeId || ""),
+        furnitureId: String(entry && entry.id || ""),
+        type: String(entry && entry.type || ""),
+        x: Math.round(Number(entry && entry.x) || 0),
+        y: Math.round(Number(entry && entry.y) || 0)
+    });
+    sendFurniturePacket(c, furnitureAddPacketParts(house, entry));
+}
+function broadcastFurnitureAdd(house, entry) {
+    furnitureLog(null, "BROADCAST ADD", {
+        room: String(house && house.room || ""),
+        placeId: String(house && house.placeId || ""),
+        furnitureId: String(entry && entry.id || ""),
+        type: String(entry && entry.type || ""),
+        x: Math.round(Number(entry && entry.x) || 0),
+        y: Math.round(Number(entry && entry.y) || 0)
+    });
+    broadcastRoomIncluding(String(house.room || ""), packet.build(["FURNITURE"].concat(furnitureAddPacketParts(house, entry))));
+}
+function broadcastFurnitureUpdate(house, entry) {
+    furnitureLog(null, "BROADCAST UPDATE", {
+        room: String(house && house.room || ""),
+        placeId: String(house && house.placeId || ""),
+        furnitureId: String(entry && entry.id || ""),
+        type: String(entry && entry.type || ""),
+        x: Math.round(Number(entry && entry.x) || 0),
+        y: Math.round(Number(entry && entry.y) || 0)
+    });
+    broadcastRoomIncluding(String(house.room || ""), packet.build(["FURNITURE"].concat(furnitureUpdatePacketParts(house, entry))));
+}
+
+function broadcastFurnitureRemove(house, furnitureId) {
+    broadcastRoomIncluding(String(house.room || ""), packet.build(["FURNITURE", "REMOVE", String(house.placeId || ""), String(furnitureId || "")]));
+}
+function broadcastFurnitureDestroyHouse(room, placeId) {
+    broadcastRoomIncluding(String(room || ""), packet.build(["FURNITURE", "DESTROY_HOUSE", String(placeId || "")]));
+}
+
+function sendFurnitureSnapshot(c, house) {
+    const list = normalizeHouseFurniture(house);
+    furnitureLog(c, "SEND SNAPSHOT", {
+        placeId: String(house && house.placeId || ""),
+        count: list.length
+    });
+    list.forEach(function(entry) {
+        sendFurnitureAdd(c, house, entry);
+    });
+}
+function furnitureContextById(house, furnitureId) {
+    const id = String(furnitureId || "");
+    const list = normalizeHouseFurniture(house);
+    const index = list.findIndex(entry => String(entry.id || "") === id);
+    return {
+        list,
+        index,
+        entry: index >= 0 ? list[index] : null
+    };
+}
+
+function findFurnitureById(house, furnitureId) {
+    return furnitureContextById(house, furnitureId).entry;
+}
+
+function cloneFurnitureChest(furniture) {
+    return normalizeFurnitureChest(furniture).map(slot => ({ item: String(slot.item), amount: clampInt(slot.amount, 0, BANK_STACK_LIMIT) }));
+}
+
+function furnitureChestHasItems(furniture) {
+    if (!furniture || String(furniture.type || "") !== "chest") return false;
+    return normalizeFurnitureChest(furniture).some(slot => String(slot.item || "0") !== "0" && clampInt(slot.amount || 0, 0, BANK_STACK_LIMIT) > 0);
+}
+
+function houseHasNonEmptyFurnitureChest(house) {
+    return normalizeHouseFurniture(house).some(entry => furnitureChestHasItems(entry));
+}
+function furnitureChestAdd(chest, item, amount) {
+    const itemId = String(item || "0");
+    const stackable = isStackableItem(itemId);
+    let remaining = clampInt(amount, 0, BANK_STACK_LIMIT);
+    let added = 0;
+    if (itemId === "0" || remaining <= 0) return 0;
+
+    if (stackable) {
+        for (const slot of chest) {
+            if (remaining <= 0) break;
+            if (slot.item !== itemId || slot.amount <= 0) continue;
+            const add = Math.min(BANK_STACK_LIMIT - clampInt(slot.amount, 0, BANK_STACK_LIMIT), remaining);
+            if (add <= 0) continue;
+            slot.amount += add;
+            added += add;
+            remaining -= add;
+        }
+    }
+
+    for (const slot of chest) {
+        if (remaining <= 0) break;
+        if (slot.amount > 0 && slot.item !== "0") continue;
+        const add = stackable ? Math.min(BANK_STACK_LIMIT, remaining) : 1;
+        slot.item = itemId;
+        slot.amount = add;
+        added += add;
+        remaining -= add;
+    }
+
+    return added;
+}
+
+function furnitureChestRemove(chest, item, amount) {
+    const itemId = String(item || "0");
+    let remaining = clampInt(amount, 0, BANK_STACK_LIMIT);
+    let removed = 0;
+    if (itemId === "0" || remaining <= 0) return 0;
+
+    for (const slot of chest) {
+        if (remaining <= 0) break;
+        if (slot.item !== itemId || slot.amount <= 0) continue;
+        const take = Math.min(slot.amount, remaining);
+        slot.amount -= take;
+        removed += take;
+        remaining -= take;
+        if (slot.amount <= 0) {
+            slot.item = "0";
+            slot.amount = 0;
+        }
+    }
+
+    return removed;
+}
+
+function sendFurnitureChestSnapshot(c, house, furniture) {
+    const chest = normalizeFurnitureChest(furniture);
+    sendFurniturePacket(c, ["CHEST_START", String(house.placeId || ""), String(furniture.id || "")]);
+    for (let i = 0; i < FURNITURE_CHEST_SLOT_LIMIT; i++) {
+        sendFurniturePacket(c, ["CHEST_SLOT", String(house.placeId || ""), String(furniture.id || ""), String(i + 1), chest[i].item, String(chest[i].amount)]);
+    }
+    sendFurniturePacket(c, ["CHEST_END", String(house.placeId || ""), String(furniture.id || "")]);
+}
+
+function saveFurnitureChestTransfer(c, house, furniture, inventory, afterSave) {
+    if (typeof house.markModified === "function") house.markModified("furniture");
+    saveHouseQueued(house, function() {
+        saveUserQueued(c, function() {
+            sendInventorySnapshot(c, inventory);
+            sendFurnitureChestSnapshot(c, house, furniture);
+            if (typeof afterSave === "function") afterSave();
+        }, function() { sendFurnitureError(c, "Could not save inventory"); });
+    }, function() { sendFurnitureError(c, "Could not save chest"); });
+}
+
+function handleFurniturePacket(c, datapacket) {
+    if (!c || !c.user) return;
+    if (typeof House === "undefined") {
+        sendFurnitureError(c, "House model is not loaded");
+        return;
+    }
+
+    const rawFields = readPacketStrings(datapacket);
+    const action = String(rawFields[1] || "").toUpperCase();
+    const placeId = String(rawFields[2] || "");
+    const room = String(c.user.current_room || "");
+    if (["PLACE", "MOVE", "MIRROR", "REMOVE", "LIST", "SNAPSHOT", "OPEN", "DEPOSIT", "WITHDRAW"].indexOf(action) >= 0) furnitureLog(c, "RECV " + action, { placeId, fields: rawFields.slice(1, 8) });
+
+    if (action === "SYNC") {
+        if (!canMasterSyncServants(c)) {
+            sendFurnitureError(c, "Furniture sync permission required");
+            return;
+        }
+        const maybeMirror = String(rawFields[7] || "");
+        const syncMirror = maybeMirror === "0" || maybeMirror === "1" ? maybeMirror : "0";
+        const syncTarget = maybeMirror === "0" || maybeMirror === "1" ? String(rawFields[8] || "") : maybeMirror;
+        broadcastRoomIncluding(room, packet.build([
+            "FURNITURE", "ADD",
+            rawFields[2] || "0",
+            rawFields[3] || "",
+            rawFields[4] || "",
+            rawFields[5] || "0",
+            rawFields[6] || "0",
+            syncMirror,
+            syncTarget
+        ]));
+        return;
+    }
+    if (!placeId || placeId === "0") {
+        sendFurnitureError(c, "Missing house id");
+        return;
+    }
+
+    House.findOne({ placeId: placeId }, function(err, house) {
+        if (err || !house) {
+            sendFurnitureError(c, "House not found");
+            return;
+        }
+        const isOwner = ownsHouse(c, house);
+        const isAdmin = isAdminUser(c.user);
+        if (String(house.room || room) !== room && !isAdmin) {
+            sendFurnitureError(c, "That house is not in this room");
+            return;
+        }
+
+        if (action === "LIST" || action === "SNAPSHOT") {
+            furnitureLog(c, "LIST snapshot requested", { placeId, count: Array.isArray(house.furniture) ? house.furniture.length : 0 });
+            sendFurnitureSnapshot(c, house);
+            return;
+        }
+
+        const isChestStorageAction = ["OPEN", "DEPOSIT", "WITHDRAW"].indexOf(action) >= 0;
+        if (isChestStorageAction && !isOwner) {
+            sendFurnitureError(c, "Only the house owner can open this chest");
+            return;
+        }
+        if (!isOwner && !isAdmin) {
+            sendFurnitureError(c, "You do not own that house");
+            return;
+        }
+        if (action === "PLACE") {
+            const type = String(rawFields[3] || "").toLowerCase();
+            const x = clampInt(rawFields[4], 0, 65535);
+            const y = clampInt(rawFields[5], 0, 65535);
+            const mirrored = String(rawFields[6] || "0") === "1";
+            const itemId = furnitureItemForType(type);
+            furnitureLog(c, "PLACE request", { placeId, type, x, y, mirrored: mirrored ? 1 : 0, itemId, owner: String(house.ownerUsername || ""), houseX: Math.round(Number(house.x) || 0), houseY: Math.round(Number(house.y) || 0), furnitureCount: Array.isArray(house.furniture) ? house.furniture.length : 0 });
+            if (!FURNITURE_TYPES.has(type) || itemId === "0") {
+                sendFurnitureError(c, "Unknown furniture type");
+                return;
+            }
+
+            const inventory = readInventory(c.user);
+            const itemCount = countInventoryItem(inventory, itemId);
+            furnitureLog(c, "PLACE inventory", { placeId, type, itemId, count: itemCount });
+            if (itemCount < 1) {
+                sendFurnitureError(c, "You do not have that furniture item");
+                return;
+            }
+            removeFromInventory(inventory, itemId, 1);
+            writeInventory(c.user, inventory);
+
+            const furniture = { id: makeFurnitureId(house, type), type, x, y, mirrored, chest: [] };
+            if (type === "chest") normalizeFurnitureChest(furniture);
+            const list = normalizeHouseFurniture(house);
+            list.push(furniture);
+            house.furniture = list;
+            furnitureLog(c, "PLACE save start", { placeId, furnitureId: String(furniture.id || ""), type, x, y, count: list.length });
+            if (typeof house.markModified === "function") house.markModified("furniture");
+
+            saveHouseQueued(house, function() {
+                furnitureLog(c, "PLACE house saved", { placeId, furnitureId: String(furniture.id || ""), type, x, y, count: Array.isArray(house.furniture) ? house.furniture.length : 0 });
+                saveUserQueued(c, function() {
+                    furnitureLog(c, "PLACE user saved; sending confirmed furniture", { placeId, furnitureId: String(furniture.id || ""), type, x, y });
+                    sendInventorySnapshot(c, inventory);
+                    sendFurnitureAdd(c, house, furniture);
+                    broadcastFurnitureAdd(house, furniture);
+                    sendFurnitureOk(c, "Furniture placed.", furnitureAddPacketParts(house, furniture).slice(1));
+                    sendFurnitureSnapshot(c, house);
+                }, function() { sendFurnitureError(c, "Could not save inventory"); });
+            }, function() { sendFurnitureError(c, "Could not save furniture"); });
+            return;
+        }
+
+        const furnitureId = String(rawFields[3] || "");
+        const furnitureContext = furnitureContextById(house, furnitureId);
+        const furniture = furnitureContext.entry;
+        if (!furniture) {
+            sendFurnitureError(c, "Furniture not found");
+            return;
+        }
+
+        if (action === "MIRROR") {
+            const list = furnitureContext.list;
+            const furnitureToMirror = list.find(entry => String(entry.id || "") === furnitureId);
+            if (!furnitureToMirror) {
+                sendFurnitureError(c, "Furniture not found");
+                return;
+            }
+            const mirrorField = String(rawFields[4] || "").toLowerCase();
+            furnitureToMirror.mirrored = mirrorField === "0" || mirrorField === "1" ? mirrorField === "1" : !furnitureToMirror.mirrored;
+            house.furniture = list;
+            furnitureLog(c, "MIRROR save start", { placeId, furnitureId, type: String(furnitureToMirror.type || ""), mirrored: furnitureToMirror.mirrored ? 1 : 0 });
+            if (typeof house.markModified === "function") house.markModified("furniture");
+            saveHouseQueued(house, function() {
+                furnitureLog(c, "MIRROR house saved", { placeId, furnitureId, type: String(furnitureToMirror.type || ""), mirrored: furnitureToMirror.mirrored ? 1 : 0 });
+                broadcastFurnitureUpdate(house, furnitureToMirror);
+                sendFurnitureOk(c, furnitureToMirror.mirrored ? "Furniture mirrored." : "Furniture unmirrored.", furnitureUpdatePacketParts(house, furnitureToMirror).slice(1));
+            }, function(err) {
+                furnitureLog(c, "MIRROR save failed", { placeId, furnitureId, error: err && err.message ? String(err.message) : String(err || "") });
+                sendFurnitureError(c, "Could not save furniture");
+            });
+            return;
+        }
+
+        if (action === "MOVE") {
+            const x = clampInt(rawFields[4], 0, 65535);
+            const y = clampInt(rawFields[5], 0, 65535);
+            const list = furnitureContext.list;
+            const furnitureToMove = list.find(entry => String(entry.id || "") === furnitureId);
+            if (!furnitureToMove) {
+                sendFurnitureError(c, "Furniture not found");
+                return;
+            }
+
+            furnitureToMove.x = x;
+            furnitureToMove.y = y;
+            house.furniture = list;
+            furnitureLog(c, "MOVE save start", { placeId, furnitureId, type: String(furnitureToMove.type || ""), x, y, count: list.length });
+            if (typeof house.markModified === "function") house.markModified("furniture");
+            saveHouseQueued(house, function() {
+                furnitureLog(c, "MOVE house saved", { placeId, furnitureId, type: String(furnitureToMove.type || ""), x: Math.round(Number(furnitureToMove.x) || 0), y: Math.round(Number(furnitureToMove.y) || 0), count: Array.isArray(house.furniture) ? house.furniture.length : 0 });
+                broadcastFurnitureUpdate(house, furnitureToMove);
+                sendFurnitureOk(c, "Furniture moved.", furnitureUpdatePacketParts(house, furnitureToMove).slice(1));
+            }, function(err) {
+                furnitureLog(c, "MOVE save failed", { placeId, furnitureId, error: err && err.message ? String(err.message) : String(err || "") });
+                sendFurnitureError(c, "Could not save furniture");
+            });
+            return;
+        }
+
+        if (action === "REMOVE") {
+            if (furnitureChestHasItems(furniture)) {
+                sendFurnitureError(c, "Empty the chest first");
+                return;
+            }
+            const itemId = furnitureItemForType(furniture.type);
+            if (itemId === "0") {
+                sendFurnitureError(c, "Unknown furniture type");
+                return;
+            }
+            const inventory = readInventory(c.user);
+            if (inventoryCapacityForItem(inventory, itemId) < 1) {
+                sendFurnitureError(c, "Inventory is full");
+                return;
+            }
+            const list = furnitureContext.list.filter(entry => String(entry.id || "") !== furnitureId);
+            addToInventory(inventory, itemId, 1);
+            writeInventory(c.user, inventory);
+            house.furniture = list;
+            if (typeof house.markModified === "function") house.markModified("furniture");
+            saveHouseQueued(house, function() {
+                saveUserQueued(c, function() {
+                    sendInventorySnapshot(c, inventory);
+                    broadcastFurnitureRemove(house, furnitureId);
+                    sendFurnitureOk(c, "Furniture removed.");
+                }, function() { sendFurnitureError(c, "Could not save inventory"); });
+            }, function() { sendFurnitureError(c, "Could not save furniture"); });
+            return;
+        }
+
+        if (furniture.type !== "chest") {
+            sendFurnitureError(c, "Chest not found");
+            return;
+        }
+
+        if (action === "OPEN") {
+            sendFurnitureChestSnapshot(c, house, furniture);
+            return;
+        }
+
+        if (action === "DEPOSIT") {
+            const item = String(rawFields[4] || "0");
+            const amount = clampInt(rawFields[5] || 0, 1, BANK_STACK_LIMIT);
+            const inventory = readInventory(c.user);
+            if (countInventoryItem(inventory, item) < amount) {
+                sendFurnitureError(c, "You do not have enough of that item");
+                return;
+            }
+            const chest = cloneFurnitureChest(furniture);
+            const added = furnitureChestAdd(chest, item, amount);
+            if (added < amount) {
+                sendFurnitureError(c, "Chest is full");
+                return;
+            }
+            removeFromInventory(inventory, item, amount);
+            writeInventory(c.user, inventory);
+            furniture.chest = chest;
+            saveFurnitureChestTransfer(c, house, furniture, inventory);
+            return;
+        }
+
+        if (action === "WITHDRAW") {
+            const item = String(rawFields[4] || "0");
+            const amount = clampInt(rawFields[5] || 0, 1, BANK_STACK_LIMIT);
+            const chest = cloneFurnitureChest(furniture);
+            const inventory = readInventory(c.user);
+            if (inventoryCapacityForItem(inventory, item) < amount) {
+                sendFurnitureError(c, "Inventory is full");
+                return;
+            }
+            const removed = furnitureChestRemove(chest, item, amount);
+            if (removed < amount) {
+                sendFurnitureError(c, "The chest does not have enough of that item");
+                return;
+            }
+            addToInventory(inventory, item, amount);
+            writeInventory(c.user, inventory);
+            furniture.chest = chest;
+            saveFurnitureChestTransfer(c, house, furniture, inventory);
+            return;
+        }
+
+        sendFurnitureError(c, "Unknown furniture action");
+    });
+}
 function sendHouseList(c, room) {
     if (!c || !c.socket) return;
     if (typeof House === "undefined") {
@@ -916,8 +2085,11 @@ function sendHouseList(c, room) {
                 String(Math.round(Number(house.y) || 0)),
                 String(house.config || ""),
                 String(house.ownerUsername || ""),
+                houseLockedValue(house),
                 ""
             ]));
+            sendServantSnapshot(c, house, true);
+            sendFurnitureSnapshot(c, house);
         });
         c.socket.send(packet.build(["HOUSE", "END", roomName]));
     });
@@ -928,6 +2100,11 @@ function handleHousePacket(c, datapacket) {
     const rawFields = readPacketStrings(datapacket);
     const action = String(rawFields[1] || "").toUpperCase();
     const room = String(c.user.current_room || "");
+
+    if (action === "SNAPSHOT") {
+        sendHouseList(c, room);
+        return;
+    }
 
     if (action === "LIST") {
         if (String(c.user.username || "") !== HOUSE_MASTER_USERNAME && !isAdminUser(c.user)) {
@@ -950,12 +2127,48 @@ function handleHousePacket(c, datapacket) {
             rawFields[3] || "0",
             rawFields[4] || "",
             rawFields[5] || "",
-            rawFields[6] || ""
+            rawFields[6] || "0",
+            rawFields[7] || ""
         ]);
         broadcastRoomIncluding(room, syncPacket);
         return;
     }
 
+    if (action === "LOCK") {
+        if (typeof House === "undefined") {
+            sendHouseError(c, "House model is not loaded");
+            return;
+        }
+        const placeId = String(rawFields[2] || "");
+        const locked = String(rawFields[3] || "0") === "1";
+        if (!placeId || placeId === "0") {
+            sendHouseError(c, "Missing house id");
+            return;
+        }
+        House.findOne({ placeId: placeId }, function(err, house) {
+            if (err || !house) {
+                sendHouseError(c, "House not found");
+                return;
+            }
+            const isOwner = ownsHouse(c, house);
+            if (!isOwner && !isAdminUser(c.user)) {
+                sendHouseError(c, "You do not own that house");
+                return;
+            }
+            house.locked = locked;
+            house.save(function(saveErr) {
+                if (saveErr) {
+                    sendHouseError(c, "Could not update house lock");
+                    return;
+                }
+                const houseRoom = String(house.room || room);
+                broadcastRoomIncluding(houseRoom, packet.build(["HOUSE", "LOCK", placeId, locked ? "1" : "0"]));
+                sendHouseOk(c, locked ? "House locked." : "House unlocked.");
+                sendHouseDirty(houseRoom);
+            });
+        });
+        return;
+    }
     if (action === "DESTROY") {
         if (typeof House === "undefined") {
             sendHouseError(c, "House model is not loaded");
@@ -976,6 +2189,10 @@ function handleHousePacket(c, datapacket) {
                 sendHouseError(c, "You do not own that house");
                 return;
             }
+            if (houseHasNonEmptyFurnitureChest(house)) {
+                sendHouseError(c, "Empty all house chests before destroying the house.");
+                return;
+            }
             const houseRoom = String(house.room || room);
             House.deleteOne({ placeId: placeId }, function(deleteErr) {
                 if (deleteErr) {
@@ -983,6 +2200,8 @@ function handleHousePacket(c, datapacket) {
                     return;
                 }
                 broadcastRoomIncluding(houseRoom, packet.build(["HOUSE", "DESTROY", placeId]));
+                broadcastServantDestroy(houseRoom, placeId);
+                broadcastFurnitureDestroyHouse(houseRoom, placeId);
                 sendHouseDirty(houseRoom);
             });
         });
@@ -1034,7 +2253,7 @@ function handleHousePacket(c, datapacket) {
                 return;
             }
             const ownerName = String(house.ownerUsername || c.user.username || "");
-            broadcastRoomIncluding(room, packet.build(["HOUSE", String(x), String(y), config, ownerName]));
+            broadcastRoomIncluding(room, packet.build(["HOUSE", String(x), String(y), config, ownerName, houseLockedValue(house)]));
             sendHouseDirty(room);
         });
     });
@@ -2582,7 +3801,8 @@ module.exports = packet = global.packet = {
                                 c.user.fishingExperience || "0",
                                 c.user.eye_colour || "0",
                                 String(c.user.townReputation || 0),
-                                isAdminUser(c.user) ? "1" : "0"
+                                isAdminUser(c.user) ? "1" : "0",
+                                c.user.firemakingExperience || "0"
 
                             ]));
 
@@ -2599,6 +3819,24 @@ module.exports = packet = global.packet = {
 
                 break;
 
+            case "WORLDREADY":
+                var readyData = PacketModels.worldready.parse(datapacket);
+                if (!c.user || String(c.user.username || "").toLowerCase() !== String(readyData.username || "").toLowerCase()) break;
+                var masterClient = findOnlineClientByUsername(HOUSE_MASTER_USERNAME);
+                if (!masterClient) {
+                    var readyClients = getAllOnlineClients();
+                    for (var readyClientIndex = 0; readyClientIndex < readyClients.length; readyClientIndex++) {
+                        if (isAdminUser(readyClients[readyClientIndex].user)) {
+                            masterClient = readyClients[readyClientIndex];
+                            break;
+                        }
+                    }
+                }
+                if (masterClient && masterClient.socket && masterClient.user
+                    && String(masterClient.user.username || "").toLowerCase() !== String(c.user.username || "").toLowerCase()) {
+                    masterClient.socket.send(packet.build(["WORLDREADY", c.user.username, readyData.room || c.user.current_room || ""]));
+                }
+                break;
             case "REGISTER":
                 var data = PacketModels.register.parse(datapacket);
                 User.register(data.username, data.password, function (result) {
@@ -2699,6 +3937,30 @@ module.exports = packet = global.packet = {
                 c.broadcastroom(packet.build(["NPC", data.object, data.name, data.target_x, data.target_y, data.status, data.player_name]));
                 break;
 
+            case "NPCXSYNC":
+                if (!c.user || (String(c.user.username || "") !== HOUSE_MASTER_USERNAME && !isAdminUser(c.user))) break;
+                var npcSyncData = PacketModels.npcxsync.parse(datapacket);
+                var npcSyncTarget = findOnlineClientByUsername(npcSyncData.target_player);
+                if (!npcSyncTarget || !npcSyncTarget.socket || !npcSyncTarget.user) break;
+                if (String(npcSyncTarget.user.current_room || "") !== String(c.user.current_room || "")) break;
+                var npcSyncCount = 8;
+                for (var npcSyncIndex = 1; npcSyncIndex <= npcSyncCount; npcSyncIndex++) {
+                    var npcSyncName = npcSyncData[`name${npcSyncIndex}`];
+                    if (npcSyncName !== "" && npcSyncName !== "skip") {
+                        var npcSyncTargetX = npcSyncData[`target_x${npcSyncIndex}`] < 0 ? 0 : npcSyncData[`target_x${npcSyncIndex}`];
+                        var npcSyncTargetY = npcSyncData[`target_y${npcSyncIndex}`] < 0 ? 0 : npcSyncData[`target_y${npcSyncIndex}`];
+                        npcSyncTarget.socket.send(packet.build([
+                            "NPC",
+                            npcSyncData.object,
+                            npcSyncName,
+                            npcSyncTargetX,
+                            npcSyncTargetY,
+                            "alive",
+                            "non"
+                        ]));
+                    }
+                }
+                break;
             case "NPCX":
                 // if (this.showlogs) console.log("Processing NPCX packet");
                 var npcData = PacketModels.npcx.parse(datapacket);
@@ -2765,6 +4027,9 @@ module.exports = packet = global.packet = {
                 handleFishSpotPacket(c, datapacket);
                 break;
 
+            case "FURNACE":
+                handleFurnacePacket(c, datapacket);
+                break;
             case "TOWNJOB":
                 handleTownJobPacket(c, datapacket);
                 break;
@@ -2828,6 +4093,14 @@ module.exports = packet = global.packet = {
 
             case "HOUSE":
                 handleHousePacket(c, datapacket);
+                break;
+
+            case "SERVANT":
+                handleServantPacket(c, datapacket);
+                break;
+
+            case "FURNITURE":
+                handleFurniturePacket(c, datapacket);
                 break;
 
             case "BIND":

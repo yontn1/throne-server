@@ -20,6 +20,11 @@ module.exports = PacketModels = {
         .string("username", StringOptions)
         .string("password", StringOptions),
 
+    worldready: new Parser().skip(2)
+        .string("command", StringOptions)
+        .string("username", StringOptions)
+        .string("room", StringOptions),
+
     // the registration request information.
     register: new Parser().skip(2)
         .string("command", StringOptions)
@@ -104,6 +109,21 @@ module.exports = PacketModels = {
         return parser;
     })(),
 
+    npcxsync: (() => {
+        let parser = new Parser().skip(2)
+            .string("command", StringOptions)
+            .string("target_player", StringOptions)
+            .string("object", StringOptions);
+
+        for (let i = 1; i <= NPCX_COUNT; i++) {
+            parser = parser
+                .string(`name${i}`, StringOptions)
+                .int32le(`target_x${i}`)
+                .int32le(`target_y${i}`);
+        }
+
+        return parser;
+    })(),
     // a players request to change one of its variables
     change: new Parser().skip(2)
         .string("command", StringOptions)
@@ -128,7 +148,13 @@ module.exports = PacketModels = {
         .string("target_x", StringOptions)
         .string("target_y", StringOptions)
         .string("remaining", StringOptions),
-
+    furnace: new Parser().skip(2)
+        .string("command", StringOptions)
+        .string("action", StringOptions)
+        .string("name", StringOptions)
+        .string("target_x", StringOptions)
+        .string("target_y", StringOptions)
+        .string("duration", StringOptions),
     //  an update from the player that its change has passed and it has to be saved on the database.
     accept: new Parser().skip(2)
         .string("command", StringOptions)
